@@ -1,5 +1,5 @@
-.gitignore
-.git
+# Environment files
+compose_files/.env
 
+# Image directory (if you want to ignore it)
 # /image
-# .env

@@ -1,23 +1,41 @@
 ---
-version: "3.3"
+networks:
+  vpn_network:
+    driver: bridge
 services:
+  surfshark:
+    container_name: surfshark
+    image: qmcgaw/gluetun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - 8080:8080
+      # Note: Surfshark does not support port forwarding; additional torrent ports are not useful for inbound peers
+    environment:
+      - VPN_SERVICE_PROVIDER=surfshark
+      - OPENVPN_USER=${OPENVPN_USER}
+      - OPENVPN_PASSWORD=${OPENVPN_PASSWORD}
+      - SERVER_COUNTRIES=${SERVER_COUNTRIES}
+      - SERVER_HOSTNAMES=${SERVER_HOSTNAMES}
+      - VPN_TYPE=openvpn
+    networks:
+      - vpn_network
+    restart: always
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
+    network_mode: service:surfshark
     container_name: qbittorrent
+    depends_on:
+      - surfshark
     environment:
       - WEBUI_PORT=8080
       - PUID=0
       - PGID=0
       - TZ=${TZ}
-      # - DOCKER_MODS=ghcr.io/gabe565/linuxserver-mod-vuetorrent
+      #- DOCKER_MODS=ghcr.io/gabe565/linuxserver-mod-vuetorrent
     volumes:
-      - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/qbittorrent:/config
-      - ${COMMON_PATH}/qbittorrent/downloads:/downloads
-    ports:
-      - 8080:8080
-      - 6881:6881
-      - 6881:6881/udp
+      - ${DOWNLOADS_PATH}:/downloads
+      - ${CONFIGS_PATH}/qbittorrent:/config
     restart: unless-stopped
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:latest
@@ -27,10 +45,11 @@ services:
       - LOG_HTML=${LOG_HTML:-false}
       - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
       - TZ=${TZ}
-      #- LANG=fr_FR
-      #- LANG=en_US
+      - LANG=en_US
     ports:
       - 8191:8191
+    networks:
+      - vpn_network
     restart: unless-stopped
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
@@ -40,21 +59,11 @@ services:
       - PGID=0
       - TZ=${TZ}
     volumes:
-      - ${COMMON_PATH}/configs/prowlarr:/config
+      - ${CONFIGS_PATH}/prowlarr:/config
     ports:
       - 9696:9696
-    restart: unless-stopped
-  jackett:
-    image: lscr.io/linuxserver/jackett:latest
-    container_name: jackett
-    environment:
-      - PUID=0
-      - PGID=0
-      - TZ=${TZ}
-    volumes:
-      - ${COMMON_PATH}/configs/jackett:/config
-    ports:
-      - 9117:9117
+    networks:
+      - vpn_network
     restart: unless-stopped
   sonarr:
     image: lscr.io/linuxserver/sonarr:latest
@@ -64,12 +73,13 @@ services:
       - PGID=0
       - TZ=${TZ}
     volumes:
-      - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/sonarr:/config
-      - ${COMMON_PATH}/sonarr/tv:/tv
-      - ${COMMON_PATH}/qbittorrent/downloads:/downloads
+      - ${TV_SHOWS_PATH}:/tv
+      - ${DOWNLOADS_PATH}:/downloads
+      - ${CONFIGS_PATH}/sonarr:/config
     ports:
       - 8989:8989
+    networks:
+      - vpn_network
     restart: unless-stopped
   radarr:
     image: lscr.io/linuxserver/radarr:latest
@@ -79,12 +89,13 @@ services:
       - PGID=0
       - TZ=${TZ}
     volumes:
-      - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/radarr:/config
-      - ${COMMON_PATH}/radarr/movies:/movies
-      - ${COMMON_PATH}/qbittorrent/downloads:/downloads
+      - ${MOVIES_PATH}:/movies
+      - ${DOWNLOADS_PATH}:/downloads
+      - ${CONFIGS_PATH}/radarr:/config
     ports:
       - 7878:7878
+    networks:
+      - vpn_network
     restart: unless-stopped
   jellyfin:
     image: lscr.io/linuxserver/jellyfin:latest
@@ -93,19 +104,21 @@ services:
       - PUID=0
       - PGID=0
       - TZ=${TZ}
-      - NVIDIA_VISIBLE_DEVICES=all
     ports:
       - 8096:8096
       - 8920:8920
       - 7359:7359/udp
       - 1900:1900/udp
     volumes:
-      - ${COMMON_PATH}:${COMMON_PATH}
-      - ${COMMON_PATH}/configs/jellyfin:/config
-      - ${COMMON_PATH}/jellyfin/cache:/cache
-      - ${COMMON_PATH}/sonarr/tv:/data/tvshows
-      - ${COMMON_PATH}/radarr/movies:/data/movies
-      - ${COMMON_PATH}/qbittorrent/downloads:/data/media_downloads
+      - ${TV_SHOWS_PATH}:/data/tvshows
+      - ${MOVIES_PATH}:/data/movies
+      - ${COLD_MOVIES_PATH}:/data/cold/movies
+      - ${COLD_TV_SHOWS_PATH}:/data/cold/tvshows
+      - ${BOOKS_PATH}:/data/books
+      - ${CONFIGS_PATH}/jellyfin:/config
+      - ${JELLYFIN_CACHE_PATH}:/cache
+    networks:
+      - vpn_network
     restart: unless-stopped
   jellyseerr:
     image: fallenbagel/jellyseerr:latest
@@ -116,5 +129,12 @@ services:
     ports:
       - 5055:5055
     volumes:
-      - ${COMMON_PATH}/configs/jellyseerr:/app/config
+      - ${CONFIGS_PATH}/jellyseerr:/app/config
+      - ${TV_SHOWS_PATH}:/data/tvshows
+      - ${MOVIES_PATH}:/data/movies
+      - ${COLD_MOVIES_PATH}:/data/cold/movies
+      - ${COLD_TV_SHOWS_PATH}:/data/cold/tvshows
+      - ${BOOKS_PATH}:/data/books
+    networks:
+      - vpn_network
     restart: unless-stopped
