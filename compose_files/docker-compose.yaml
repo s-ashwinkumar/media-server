@@ -138,3 +138,18 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ}
+    ports:
+      - 3000:3000
+    volumes:
+      - ${CONFIGS_PATH}/homepage:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - vpn_network
+    restart: unless-stopped
