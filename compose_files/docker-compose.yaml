@@ -120,6 +120,25 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+  filebrowser:
+    image: filebrowser/filebrowser:latest
+    container_name: filebrowser
+    user: "0:0"
+    environment:
+      - TZ=${TZ}
+    command: -d /config/database.db -r /srv
+    ports:
+      - 8081:80
+    volumes:
+      - ${TV_SHOWS_PATH}:/srv/tvshows
+      - ${MOVIES_PATH}:/srv/movies
+      - ${COLD_MOVIES_PATH}:/srv/cold/movies
+      - ${COLD_TV_SHOWS_PATH}:/srv/cold/tvshows
+      - ${BOOKS_PATH}:/srv/books
+      - ${CONFIGS_PATH}/filebrowser:/config
+    networks:
+      - vpn_network
+    restart: unless-stopped
   jellyseerr:
     image: fallenbagel/jellyseerr:latest
     container_name: jellyseerr
@@ -142,14 +161,22 @@ services:
     image: ghcr.io/gethomepage/homepage:latest
     container_name: homepage
     environment:
+      - HOMEPAGE_ALLOWED_HOSTS=*
       - PUID=0
       - PGID=0
       - TZ=${TZ}
+      - HOMEPAGE_VAR_JELLYFIN_API_KEY=${HOMEPAGE_VAR_JELLYFIN_API_KEY}
+      - HOMEPAGE_VAR_SONARR_API_KEY=${HOMEPAGE_VAR_SONARR_API_KEY}
+      - HOMEPAGE_VAR_RADARR_API_KEY=${HOMEPAGE_VAR_RADARR_API_KEY}
+      - HOMEPAGE_VAR_PROWLARR_API_KEY=${HOMEPAGE_VAR_PROWLARR_API_KEY}
+      - HOMEPAGE_VAR_QBITTORRENT_PASSWORD=${HOMEPAGE_VAR_QBITTORRENT_PASSWORD}
+      - HOMEPAGE_VAR_JELLYSEERR_API_KEY=${HOMEPAGE_VAR_JELLYSEERR_API_KEY}
     ports:
       - 3000:3000
     volumes:
       - ${CONFIGS_PATH}/homepage:/app/config
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${CONFIGS_PATH}/homepage/images:/app/public/images
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - vpn_network
     restart: unless-stopped
