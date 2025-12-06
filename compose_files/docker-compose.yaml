@@ -171,12 +171,28 @@ services:
       - HOMEPAGE_VAR_PROWLARR_API_KEY=${HOMEPAGE_VAR_PROWLARR_API_KEY}
       - HOMEPAGE_VAR_QBITTORRENT_PASSWORD=${HOMEPAGE_VAR_QBITTORRENT_PASSWORD}
       - HOMEPAGE_VAR_JELLYSEERR_API_KEY=${HOMEPAGE_VAR_JELLYSEERR_API_KEY}
+      - HOMEPAGE_VAR_SABNZBD_API_KEY=${HOMEPAGE_VAR_SABNZBD_API_KEY}
     ports:
       - 3000:3000
     volumes:
       - ${CONFIGS_PATH}/homepage:/app/config
       - ${CONFIGS_PATH}/homepage/images:/app/public/images
       - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - vpn_network
+    restart: unless-stopped
+  sabnzbd:
+    image: lscr.io/linuxserver/sabnzbd:latest
+    container_name: sabnzbd
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ}
+    volumes:
+      - ${DOWNLOADS_PATH}:/downloads
+      - ${CONFIGS_PATH}/sabnzbd:/config
+    ports:
+      - 8082:8080 # Host port 8082 for SABnzbd WebUI
     networks:
       - vpn_network
     restart: unless-stopped
