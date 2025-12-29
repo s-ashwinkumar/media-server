@@ -172,6 +172,7 @@ services:
       - HOMEPAGE_VAR_QBITTORRENT_PASSWORD=${HOMEPAGE_VAR_QBITTORRENT_PASSWORD}
       - HOMEPAGE_VAR_JELLYSEERR_API_KEY=${HOMEPAGE_VAR_JELLYSEERR_API_KEY}
       - HOMEPAGE_VAR_SABNZBD_API_KEY=${HOMEPAGE_VAR_SABNZBD_API_KEY}
+      - HOMEPAGE_VAR_BAZARR_API_KEY=${HOMEPAGE_VAR_BAZARR_API_KEY}
     ports:
       - 3000:3000
     volumes:
@@ -193,6 +194,26 @@ services:
       - ${CONFIGS_PATH}/sabnzbd:/config
     ports:
       - 8082:8080 # Host port 8082 for SABnzbd WebUI
+    networks:
+      - vpn_network
+    restart: unless-stopped
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIGS_PATH}/bazarr:/config
+      # Mount TV and Movie paths using the same internal names as Sonarr/Radarr
+      - ${TV_SHOWS_PATH}:/tv
+      - ${MOVIES_PATH}:/movies
+      # Mount cold storage paths so Bazarr can find subtitles for ALL media
+      - ${COLD_TV_SHOWS_PATH}:/coldtv
+      - ${COLD_MOVIES_PATH}:/coldmovies
+    ports:
+      - 6767:6767 # Host Port 6767 for WebUI, Container Port 6767
     networks:
       - vpn_network
     restart: unless-stopped
