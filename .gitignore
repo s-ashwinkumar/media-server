@@ -3,3 +3,6 @@ compose_files/.env
 
 # Image directory (if you want to ignore it)
 # /image
+
+# Homepage logs
+homepage/logs/

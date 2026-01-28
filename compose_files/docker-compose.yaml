@@ -3,6 +3,35 @@ networks:
   vpn_network:
     driver: bridge
 services:
+  traefik:
+    # v3.6+ is required for Docker API >= 1.44 (Docker 29+)
+    image: traefik:v3.6
+    container_name: traefik
+    environment:
+      # Your Docker daemon requires API >= 1.44. Without this, Traefik's Docker
+      # provider fails and no routers/services show up in the dashboard.
+      - DOCKER_API_VERSION=1.44
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "8083:8080" # Traefik dashboard (accessible via http://traefik.local or http://your-tailscale-ip:8083)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${CONFIGS_PATH}/traefik:/etc/traefik
+    networks:
+      - vpn_network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.service=api@internal"
   surfshark:
     container_name: surfshark
     image: qmcgaw/gluetun
@@ -21,6 +50,11 @@ services:
     networks:
       - vpn_network
     restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.qbittorrent.rule=Host(`qbittorrent.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.qbittorrent.entrypoints=web"
+      - "traefik.http.services.qbittorrent.loadbalancer.server.port=8080"
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
     network_mode: service:surfshark
@@ -51,6 +85,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.flaresolverr.rule=Host(`flaresolverr.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.flaresolverr.entrypoints=web"
+      - "traefik.http.services.flaresolverr.loadbalancer.server.port=8191"
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
@@ -65,6 +104,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prowlarr.rule=Host(`prowlarr.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.prowlarr.entrypoints=web"
+      - "traefik.http.services.prowlarr.loadbalancer.server.port=9696"
   sonarr:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: sonarr
@@ -81,6 +125,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sonarr.rule=Host(`sonarr.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.sonarr.entrypoints=web"
+      - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
   radarr:
     image: lscr.io/linuxserver/radarr:latest
     container_name: radarr
@@ -97,6 +146,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.radarr.rule=Host(`radarr.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.radarr.entrypoints=web"
+      - "traefik.http.services.radarr.loadbalancer.server.port=7878"
   jellyfin:
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
@@ -120,6 +174,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyfin.rule=Host(`jellyfin.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.jellyfin.entrypoints=web"
+      - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
   filebrowser:
     image: filebrowser/filebrowser:latest
     container_name: filebrowser
@@ -139,6 +198,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.filebrowser.rule=Host(`filebrowser.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.filebrowser.entrypoints=web"
+      - "traefik.http.services.filebrowser.loadbalancer.server.port=80"
   jellyseerr:
     image: fallenbagel/jellyseerr:latest
     container_name: jellyseerr
@@ -157,6 +221,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jellyseerr.rule=Host(`jellyseerr.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.jellyseerr.entrypoints=web"
+      - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
   homepage:
     image: ghcr.io/gethomepage/homepage:latest
     container_name: homepage
@@ -182,6 +251,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.homepage.rule=Host(`homepage.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.homepage.entrypoints=web"
+      - "traefik.http.services.homepage.loadbalancer.server.port=3000"
   sabnzbd:
     image: lscr.io/linuxserver/sabnzbd:latest
     container_name: sabnzbd
@@ -197,6 +271,11 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.sabnzbd.rule=Host(`sabnzbd.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.sabnzbd.entrypoints=web"
+      - "traefik.http.services.sabnzbd.loadbalancer.server.port=8080"
   bazarr:
     image: lscr.io/linuxserver/bazarr:latest
     container_name: bazarr
@@ -217,3 +296,8 @@ services:
     networks:
       - vpn_network
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bazarr.rule=Host(`bazarr.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.bazarr.entrypoints=web"
+      - "traefik.http.services.bazarr.loadbalancer.server.port=6767"

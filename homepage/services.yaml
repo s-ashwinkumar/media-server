@@ -1,0 +1,91 @@
+---
+# For configuration options and examples, please see:
+# https://gethomepage.dev/configs/services/
+
+- Media Server:
+    - Jellyfin:
+        href: http://jellyfin.kewpie.top
+        description: 8096 - Media server for movies, TV shows, and books
+        icon: jellyfin.png
+        container: jellyfin
+        widget:
+          type: jellyfin
+          url: http://jellyfin:8096
+          key: {{HOMEPAGE_VAR_JELLYFIN_API_KEY}}
+    - Jellyseerr:
+        href: http://jellyseerr.kewpie.top
+        description: 5055 - Request management for Jellyfin
+        icon: jellyseerr.png
+        container: jellyseerr
+        widget:
+          type: jellyseerr
+          url: http://jellyseerr:5055
+          key: {{HOMEPAGE_VAR_JELLYSEERR_API_KEY}}
+
+- Automation:
+    - Sonarr:
+        href: http://sonarr.kewpie.top
+        description: 8989 - TV show collection manager
+        icon: sonarr.png
+        container: sonarr
+        widget:
+          type: sonarr
+          url: http://sonarr:8989
+          key: {{HOMEPAGE_VAR_SONARR_API_KEY}}
+    - Radarr:
+        href: http://radarr.kewpie.top
+        description: 7889 - Movie collection manager
+        icon: radarr.png
+        container: radarr
+        widget:
+          type: radarr
+          url: http://radarr:7878
+          key: {{HOMEPAGE_VAR_RADARR_API_KEY}}
+          enableQueue: true
+          enableCalendar: true
+    - Prowlarr:
+        href: http://prowlarr.kewpie.top
+        description: 9696 - Indexer manager for Sonarr and Radarr
+        icon: prowlarr.png
+        container: prowlarr
+        widget:
+          type: prowlarr
+          url: http://prowlarr:9696
+          key: {{HOMEPAGE_VAR_PROWLARR_API_KEY}}
+    - Bazarr:
+        href: http://bazarr.kewpie.top
+        description: 6767 - Subtitle manager for Sonarr and Radarr
+        icon: bazarr.png
+        container: bazarr
+        widget:
+          type: bazarr
+          url: http://bazarr:6767
+          key: {{HOMEPAGE_VAR_BAZARR_API_KEY}}
+
+- Downloaders:
+    - qBittorrent:
+        href: http://qbittorrent.kewpie.top
+        description: 8080 - BitTorrent client (routed through Surfshark VPN)
+        icon: qbittorrent.png
+        container: qbittorrent
+        widget:
+            type: qbittorrent
+            url: http://surfshark:8080
+            username: admin
+            password: {{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}
+            enableLeechProgress: true # optional, defaults to false
+            enableLeechSize: true # optional, defaults to false
+    - Flaresolverr:
+        href: http://flaresolverr.kewpie.top
+        description: 8191 - Proxy server for bypassing Cloudflare protection
+        icon: flaresolverr.png
+        container: flaresolverr
+    - SABnzbd:
+        href: http://sabnzbd.kewpie.top
+        description: 8082 - Usenet downloader
+        icon: sabnzbd.png
+        container: sabnzbd
+        widget:
+            type: sabnzbd
+            url: http://sabnzbd:8080
+            key: {{HOMEPAGE_VAR_SABNZBD_API_KEY}}
