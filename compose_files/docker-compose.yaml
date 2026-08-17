@@ -249,6 +249,7 @@ services:
       - HOMEPAGE_VAR_JELLYSEERR_API_KEY=${HOMEPAGE_VAR_JELLYSEERR_API_KEY}
       - HOMEPAGE_VAR_SABNZBD_API_KEY=${HOMEPAGE_VAR_SABNZBD_API_KEY}
       - HOMEPAGE_VAR_BAZARR_API_KEY=${HOMEPAGE_VAR_BAZARR_API_KEY}
+      - HOMEPAGE_VAR_READARR_API_KEY=${HOMEPAGE_VAR_READARR_API_KEY}
     ports:
       - 3000:3000
     volumes:
@@ -308,3 +309,47 @@ services:
       - "traefik.http.routers.bazarr.rule=Host(`bazarr.${TRAEFIK_DOMAIN:-local}`)"
       - "traefik.http.routers.bazarr.entrypoints=web"
       - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
+
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: audiobookshelf
+    environment:
+      - TZ=${TZ}
+      - AUDIOBOOKSHELF_TYPE=multi-user
+    ports:
+      - 13378:80
+    volumes:
+      - ${BOOKS_PATH}:/audiobooks
+      - ${BOOKS_PATH}:/books
+      - ${CONFIGS_PATH}/audiobookshelf/config:/config
+      - ${CONFIGS_PATH}/audiobookshelf/metadata:/metadata
+    networks:
+      - vpn_network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.audiobookshelf.rule=Host(`audiobookshelf.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.audiobookshelf.entrypoints=web"
+      - "traefik.http.services.audiobookshelf.loadbalancer.server.port=80"
+
+  readarr:
+    image: lscr.io/linuxserver/readarr:0.4.19-nightly
+    container_name: readarr
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ}
+    ports:
+      - 8787:8787
+    volumes:
+      - ${BOOKS_PATH}:/books
+      - ${DOWNLOADS_PATH}:/downloads
+      - ${CONFIGS_PATH}/readarr:/config
+    networks:
+      - vpn_network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.readarr.rule=Host(`readarr.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.readarr.entrypoints=web"
+      - "traefik.http.services.readarr.loadbalancer.server.port=8787"
