@@ -70,15 +70,6 @@
           type: bazarr
           url: http://bazarr:6767
           key: {{HOMEPAGE_VAR_BAZARR_API_KEY}}
-    - Readarr:
-        href: http://readarr.kewpie.top
-        description: 8787 - Book collection manager
-        icon: readarr.png
-        container: readarr
-        widget:
-          type: readarr
-          url: http://readarr:8787
-          key: {{HOMEPAGE_VAR_READARR_API_KEY}}
 
 
 - Downloaders:
