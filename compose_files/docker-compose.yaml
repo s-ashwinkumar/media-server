@@ -330,3 +330,25 @@ services:
       - "traefik.http.routers.audiobookshelf.rule=Host(`audiobookshelf.${TRAEFIK_DOMAIN:-local}`)"
       - "traefik.http.routers.audiobookshelf.entrypoints=web"
       - "traefik.http.services.audiobookshelf.loadbalancer.server.port=80"
+
+  lazylibrarian:
+    image: lscr.io/linuxserver/lazylibrarian:latest
+    container_name: lazylibrarian
+    environment:
+      - PUID=0
+      - PGID=0
+      - TZ=${TZ}
+    ports:
+      - 5299:5299
+    volumes:
+      - ${BOOKS_PATH}:/books
+      - ${DOWNLOADS_PATH}:/downloads
+      - ${CONFIGS_PATH}/lazylibrarian:/config
+    networks:
+      - vpn_network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.lazylibrarian.rule=Host(`lazylibrarian.${TRAEFIK_DOMAIN:-local}`)"
+      - "traefik.http.routers.lazylibrarian.entrypoints=web"
+      - "traefik.http.services.lazylibrarian.loadbalancer.server.port=5299"

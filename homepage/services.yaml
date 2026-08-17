@@ -70,6 +70,14 @@
           type: bazarr
           url: http://bazarr:6767
           key: {{HOMEPAGE_VAR_BAZARR_API_KEY}}
+    - LazyLibrarian:
+        href: http://lazylibrarian.kewpie.top
+        description: 5299 - E-book and Audiobook collection manager
+        icon: lazylibrarian.png
+        container: lazylibrarian
+        widget:
+          type: lazylibrarian
+          url: http://lazylibrarian:5299
 
 
 - Downloaders:
