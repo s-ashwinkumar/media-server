@@ -47,6 +47,8 @@ services:
       - SERVER_COUNTRIES=${SERVER_COUNTRIES}
       - SERVER_HOSTNAMES=${SERVER_HOSTNAMES}
       - VPN_TYPE=openvpn
+    volumes:
+      - ${CONFIGS_PATH}/gluetun/config.toml:/gluetun/auth/config.toml:ro
     networks:
       - vpn_network
     restart: always

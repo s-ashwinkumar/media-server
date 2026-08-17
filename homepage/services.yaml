@@ -75,6 +75,14 @@
             password: {{HOMEPAGE_VAR_QBITTORRENT_PASSWORD}}
             enableLeechProgress: true # optional, defaults to false
             enableLeechSize: true # optional, defaults to false
+    - Surfshark VPN:
+        description: VPN connection status & IP info
+        icon: surfshark.png
+        container: surfshark
+        widget:
+            type: gluetun
+            url: http://surfshark:8000
+            key: 123456
     - Flaresolverr:
         href: http://flaresolverr.kewpie.top
         description: 8191 - Proxy server for bypassing Cloudflare protection
