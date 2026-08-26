@@ -1,8 +1,17 @@
-# Environment files
+# Environment & Secret files
+*.env
+*.env.*
+!.env.example
+agent/.env
 compose_files/.env
 
-# Image directory (if you want to ignore it)
-# /image
+# Python Virtual Environments & Caches
+venv/
+**/venv/
+**/__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
 
 # Homepage logs
 homepage/logs/

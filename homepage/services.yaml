@@ -21,14 +21,6 @@
           type: jellyseerr
           url: http://jellyseerr:5055
           key: {{HOMEPAGE_VAR_JELLYSEERR_API_KEY}}
-    - Audiobookshelf:
-        href: http://audiobookshelf.kewpie.top
-        description: 13378 - Audiobook & E-book server
-        icon: audiobookshelf.png
-        container: audiobookshelf
-        widget:
-          type: audiobookshelf
-          url: http://audiobookshelf:80
 
 
 - Automation:

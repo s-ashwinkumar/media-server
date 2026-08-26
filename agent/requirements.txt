@@ -1,0 +1,8 @@
+discord.py>=2.3.2
+openai>=1.40.0
+pyarr>=5.2.0
+docker>=7.1.0
+qbittorrent-api>=2024.5.64
+python-dotenv>=1.0.1
+requests>=2.32.3
+psutil>=6.0.0

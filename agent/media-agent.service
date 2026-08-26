@@ -1,0 +1,15 @@
+[Unit]
+Description=Discord Media Server AI Agent
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=mediaserver
+WorkingDirectory=/home/mediaserver/code/media-server/agent
+ExecStart=/home/mediaserver/code/media-server/agent/venv/bin/python3 /home/mediaserver/code/media-server/agent/bot.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/home/mediaserver/code/media-server/agent/.env
+
+[Install]
+WantedBy=multi-user.target
