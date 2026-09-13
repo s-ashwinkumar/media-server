@@ -70,6 +70,8 @@
         widget:
           type: whatsupdocker
           url: http://wud:3000
+          username: {{HOMEPAGE_VAR_WUD_USER}}
+          password: {{HOMEPAGE_VAR_WUD_PASSWORD}}
 
 
 - Downloaders:

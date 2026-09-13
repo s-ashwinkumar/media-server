@@ -310,13 +310,15 @@ services:
       - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
 
   wud:
-    image: fmartinou/whats-up-docker:latest
+    image: getwud/wud:latest
     container_name: wud
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
       - TZ=${TZ}
       - WUD_LOG_LEVEL=INFO
+      - WUD_AUTH_ADMIN_USER=${WUD_ADMIN_USER:-admin}
+      - WUD_AUTH_ADMIN_PASSWORD=${WUD_ADMIN_PASSWORD}
       - WUD_WATCHER_LOCAL_CRON=0 */6 * * *
       - WUD_WATCHER_LOCAL_WATCHALL=true
       - WUD_REGISTRY_LSCR_USERNAME=anonymous
