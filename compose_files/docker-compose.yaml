@@ -312,6 +312,8 @@ services:
   wud:
     image: fmartinou/whats-up-docker:latest
     container_name: wud
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - TZ=${TZ}
       - WUD_LOG_LEVEL=INFO
@@ -319,6 +321,9 @@ services:
       - WUD_WATCHER_LOCAL_WATCHALL=true
       - WUD_REGISTRY_LSCR_USERNAME=anonymous
       - WUD_REGISTRY_LSCR_TOKEN=anonymous
+      - WUD_TRIGGER_HTTP_KEWPIE_URL=http://host.docker.internal:8088/wud-webhook
+      - WUD_TRIGGER_HTTP_KEWPIE_METHOD=POST
+      - WUD_TRIGGER_HTTP_KEWPIE_ONCE=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${CONFIGS_PATH}/wud:/store
