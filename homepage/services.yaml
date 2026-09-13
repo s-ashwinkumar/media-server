@@ -65,7 +65,7 @@
     - What's Up Docker:
         href: http://wud.kewpie.top
         description: 3001 - Container update monitor
-        icon: whatsupdocker.png
+        icon: whats-up-docker.png
         container: wud
         widget:
           type: whatsupdocker
