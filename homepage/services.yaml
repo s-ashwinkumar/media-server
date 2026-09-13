@@ -35,7 +35,7 @@
           key: {{HOMEPAGE_VAR_SONARR_API_KEY}}
     - Radarr:
         href: http://radarr.kewpie.top
-        description: 7889 - Movie collection manager
+        description: 7878 - Movie collection manager
         icon: radarr.png
         container: radarr
         widget:
@@ -62,14 +62,6 @@
           type: bazarr
           url: http://bazarr:6767
           key: {{HOMEPAGE_VAR_BAZARR_API_KEY}}
-    - LazyLibrarian:
-        href: http://lazylibrarian.kewpie.top
-        description: 5299 - E-book and Audiobook collection manager
-        icon: lazylibrarian.png
-        container: lazylibrarian
-        widget:
-          type: lazylibrarian
-          url: http://lazylibrarian:5299
 
 
 - Downloaders:
