@@ -4,30 +4,38 @@ from config import OPENROUTER_API_KEY, OPENROUTER_BASE_URL, OPENROUTER_MODELS, P
 from tools.registry import get_tools_schema_for_user, execute_tool
 
 def _get_system_prompt(is_admin: bool) -> str:
+    if not is_admin:
+        return """You are Kewpie, a friendly, concise, and helpful media assistant for this server.
+Your role is to help server members check if movies or TV shows are available to watch, search the catalog, and submit media requests.
+
+Available Capabilities:
+1. Search Catalog: Use `jellyseerr_search` to check if a title exists, and see whether it is already Available to watch on the server, Downloading/Processing, or Available to Request.
+2. Request Media: Use `jellyseerr_request_media` to submit a request for a movie or TV show.
+3. Check Requests: Use `jellyseerr_list_requests` to check the status of recent requests.
+4. Active Streams: Use `jellyfin_get_active_streams` if asked what is currently playing.
+
+Privacy & Security Rules (STRICT):
+- NEVER mention internal backend tools, download clients, or infrastructure names (such as Radarr, Sonarr, qBittorrent, Prowlarr, Docker, Traefik, Bazarr, APIs, tokens, or containers).
+- NEVER discuss admin permissions, restrictions, or backend plumbing with users.
+- If a title cannot be found in the catalog or requested:
+  - If `jellyseerr_request_media` indicates the request was forwarded to the administrator, inform the user warmly: "I couldn't find an exact match in the public catalog, but I've forwarded your request to the server admin for review!"
+  - If completely unfound, politely state that you could not locate that title in the catalog, but that an admin can look into adding it manually.
+  - NEVER say "you don't have permission to add via Radarr/Sonarr".
+- Be conversational, warm, and concise. Use clean markdown formatting (bold titles, release years).
+"""
+
     admin_tag = ", ".join([f"<@{uid}>" for uid in ADMIN_USER_IDS]) if ADMIN_USER_IDS else "an administrator"
-    role_desc = "Administrator" if is_admin else "Standard User"
-    return f"""You are Kewpie, an intelligent and proactive media server assistant.
-You help manage and search a self-hosted media server stack (Jellyfin, Radarr, Sonarr, qBittorrent, Traefik, Docker).
-Current User Role: {role_desc}
+    return f"""You are Kewpie, an intelligent and proactive media server assistant for the system administrator.
+You have full access to manage, automate, and search the self-hosted media server stack (Jellyfin, Radarr, Sonarr, Prowlarr, qBittorrent, SABnzbd, Docker, System Storage).
 
-Access Control & Permission Rules:
-1. Non-Admin Users:
-   - Non-admins can ONLY submit requests via `jellyseerr_request_media`.
-   - NEVER add media directly to Sonarr or Radarr for non-admins.
-   - If a title cannot be requested via Jellyseerr (e.g. obscure title or TMDB lookup error) but can be found in Sonarr/Radarr indexer lookup, explain to the user that Jellyseerr could not match it, and tag the administrator ({admin_tag}) so the administrator can add it directly to Sonarr/Radarr.
-2. Administrator Users:
-   - Full access to direct adds (`sonarr_add_series`, `radarr_add_movie`), indexer searches, interactive release grabs, and media deletions.
-
-Guidelines:
-1. Be proactive:
+Role: Administrator Controller
+Access Control & Rules:
+1. Administrator Users: Full access to direct adds (`sonarr_add_series`, `radarr_add_movie`), indexer searches, interactive release grabs, and media deletions.
+2. Be proactive:
    - When asked about missing episodes or movies, use `sonarr_get_episodes(series_id, missing_only=True)` to inspect EXACTLY which season and episode numbers lack files.
-   - When asked to find or queue media:
-     - For Admins: Use `sonarr_trigger_search` / `sonarr_add_series` / `radarr_add_movie` or `sonarr_get_releases` / `radarr_get_releases`.
-     - For Non-admins: Use `jellyseerr_request_media`.
-2. Be concise and direct. Use clean markdown formatting.
-3. Always synthesize your findings into a clear, formatted summary as soon as you gather the required information.
-4. If a user asks to perform an action they do not have permissions for, politely inform them that this action requires administrator privileges.
-5. Keep responses token-efficient—do not repeat unnecessary tool outputs verbatim.
+   - When asked to find or queue media: Use `sonarr_trigger_search` / `sonarr_add_series` / `radarr_add_movie` or `sonarr_get_releases` / `radarr_get_releases`.
+3. Be concise, direct, and technical. Use clean markdown formatting.
+4. Keep responses token-efficient—do not repeat unnecessary tool outputs verbatim.
 """
 
 def _get_client():
@@ -38,7 +46,12 @@ def _get_client():
         api_key=OPENROUTER_API_KEY
     )
 
-async def ask_agent(user_prompt: str, is_admin: bool = False, conversation_history: list[dict] = None) -> dict:
+async def ask_agent(
+    user_prompt: str, 
+    is_admin: bool = False, 
+    conversation_history: list[dict] = None,
+    ambient_context: str = ""
+) -> dict:
     """
     Process a user prompt using OpenRouter with role-based function calling and automatic fallback cascades.
     Returns a dict with:
@@ -46,6 +59,7 @@ async def ask_agent(user_prompt: str, is_admin: bool = False, conversation_histo
       - 'releases_found': optional dict with service and release list
       - 'restart_container_target': optional container name (to attach confirmation button)
       - 'pending_request': optional dict for interactive approval buttons
+      - 'admin_fallback': optional dict when unmatched media is found in Radarr/Sonarr for admin DM
     """
     client = _get_client()
     if not client:
@@ -57,6 +71,11 @@ async def ask_agent(user_prompt: str, is_admin: bool = False, conversation_histo
     tools_for_user = get_tools_schema_for_user(is_admin)
 
     messages = [{"role": "system", "content": _get_system_prompt(is_admin)}]
+    if ambient_context:
+        messages.append({
+            "role": "system",
+            "content": f"[Recent channel conversation for context]:\n{ambient_context}"
+        })
     if conversation_history:
         # Keep last 6 turns to maintain short context and save tokens
         messages.extend(conversation_history[-6:])
@@ -65,6 +84,7 @@ async def ask_agent(user_prompt: str, is_admin: bool = False, conversation_histo
     releases_captured = None
     container_restart_target = None
     pending_request_captured = None
+    admin_fallback_captured = None
     max_steps = 8
     step_count = 0
     last_message = None
@@ -150,13 +170,21 @@ async def ask_agent(user_prompt: str, is_admin: bool = False, conversation_histo
                     }
                 elif is_admin and fn_name == "restart_docker_container":
                     container_restart_target = fn_args.get("container_name")
-                elif fn_name == "jellyseerr_request_media" and isinstance(parsed_res, dict) and parsed_res.get("status") in ["success", "pending_approval"]:
-                    pending_request_captured = {
-                        "request_id": parsed_res.get("requestId"),
-                        "title": parsed_res.get("title"),
-                        "mediaType": parsed_res.get("mediaType", "movie"),
-                        "mediaId": parsed_res.get("mediaId")
-                    }
+                elif fn_name == "jellyseerr_request_media" and isinstance(parsed_res, dict):
+                    if parsed_res.get("status") in ["unmatched_found_in_radarr", "unmatched_found_in_sonarr"]:
+                        admin_fallback_captured = {
+                            "title": parsed_res.get("title"),
+                            "year": parsed_res.get("year"),
+                            "mediaType": parsed_res.get("mediaType", "movie"),
+                            "id": parsed_res.get("tmdbId") if parsed_res.get("status") == "unmatched_found_in_radarr" else parsed_res.get("tvdbId")
+                        }
+                    elif parsed_res.get("status") in ["success", "pending_approval"]:
+                        pending_request_captured = {
+                            "request_id": parsed_res.get("requestId"),
+                            "title": parsed_res.get("title"),
+                            "mediaType": parsed_res.get("mediaType", "movie"),
+                            "mediaId": parsed_res.get("mediaId")
+                        }
             except Exception:
                 pass
 
@@ -185,5 +213,6 @@ async def ask_agent(user_prompt: str, is_admin: bool = False, conversation_histo
         "text": final_text or "Done.",
         "releases_found": releases_captured,
         "restart_container_target": container_restart_target,
-        "pending_request": pending_request_captured
+        "pending_request": pending_request_captured,
+        "admin_fallback": admin_fallback_captured
     }

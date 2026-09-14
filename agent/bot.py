@@ -3,9 +3,15 @@ import discord
 import asyncio
 from discord.ext import commands, tasks
 
-from config import DISCORD_BOT_TOKEN, ADMIN_USER_IDS, ALLOWED_USER_IDS
+from config import (
+    DISCORD_BOT_TOKEN, 
+    ADMIN_USER_IDS, 
+    ALLOWED_USER_IDS, 
+    AUTO_REPLY_CHANNEL_IDS,
+    AUTO_REPLY_CHANNEL_NAMES
+)
 from llm import ask_agent
-from ui import ReleasePickerView, ContainerRestartConfirmView, JellyseerrApprovalView
+from ui import ReleasePickerView, ContainerRestartConfirmView, JellyseerrApprovalView, AdminDirectAddView
 from tools.system_tools import get_disk_space, get_system_stats
 from tools.docker_tools import list_docker_containers
 
@@ -16,8 +22,8 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# In-memory short conversation history per user: {user_id: [{"role": "user"/"assistant", "content": ...}]}
-user_histories = {}
+# In-memory conversation history: {channel_or_user_id: [{"role": "user"/"assistant", "content": ...}]}
+conversation_histories = {}
 
 def is_authorized(user_id: int) -> bool:
     if not ALLOWED_USER_IDS:
@@ -82,6 +88,7 @@ async def on_ready():
     print(f" Media Server Agent is Online as: {bot.user}")
     print(f" Admin User IDs: {ADMIN_USER_IDS or 'All (No admin whitelist set)'}")
     print(f" General Access: {'Open to all server members' if not ALLOWED_USER_IDS else ALLOWED_USER_IDS}")
+    print(f" Auto-Reply Channels: {', '.join(['#' + n for n in AUTO_REPLY_CHANNEL_NAMES]) if AUTO_REPLY_CHANNEL_NAMES else ''} {AUTO_REPLY_CHANNEL_IDS if AUTO_REPLY_CHANNEL_IDS else ''}")
     print(f"==========================================\n")
 
 @bot.command(name="status")
@@ -140,97 +147,162 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-    # Check if message is a DM or mentions the bot
+    # Check activation triggers: DM, mention, dedicated channel, or reply to bot
     is_dm = isinstance(message.channel, discord.DMChannel)
     is_mentioned = bot.user in message.mentions
+    
+    channel_name = getattr(message.channel, "name", "").lower().strip()
+    is_auto_reply_channel = (
+        message.channel.id in AUTO_REPLY_CHANNEL_IDS or 
+        channel_name in AUTO_REPLY_CHANNEL_NAMES
+    )
 
-    if is_dm or is_mentioned:
-        # Strip bot mention from content
-        clean_content = message.content.replace(f"<@{bot.user.id}>", "").strip()
-        if not clean_content:
-            await message.reply("👋 How can I help you with your media server?")
+    is_reply_to_bot = False
+    if message.reference and message.reference.message_id:
+        try:
+            ref_msg = message.reference.resolved
+            if ref_msg is None or isinstance(ref_msg, discord.DeletedReferencedMessage):
+                ref_msg = await message.channel.fetch_message(message.reference.message_id)
+            if ref_msg and ref_msg.author == bot.user:
+                is_reply_to_bot = True
+        except Exception:
+            pass
+
+    if not (is_dm or is_mentioned or is_auto_reply_channel or is_reply_to_bot):
+        return
+
+    # Strip bot mention from content
+    clean_content = message.content.replace(f"<@{bot.user.id}>", "").replace(f"<@!{bot.user.id}>", "").strip()
+    if not clean_content:
+        await message.reply("👋 How can I help you with your media server?")
+        return
+
+    # Capture ambient channel context (recent messages before this one) so the bot understands references
+    ambient_context = ""
+    if not is_dm and hasattr(message.channel, "history"):
+        try:
+            prev_msgs = []
+            async for prev in message.channel.history(limit=6, before=message):
+                if prev.author == bot.user or not prev.content.strip():
+                    continue
+                prev_msgs.append(f"{prev.author.display_name}: {prev.content.strip()}")
+            if prev_msgs:
+                prev_msgs.reverse()
+                ambient_context = "\n".join(prev_msgs)
+        except Exception as e:
+            logger.debug(f"Could not retrieve ambient context: {e}")
+
+    async with message.channel.typing():
+        user_id = message.author.id
+        user_is_admin = is_admin(user_id)
+        
+        # Track history per channel (for shared context) or per user in DMs
+        history_key = message.channel.id if not is_dm else user_id
+        history = conversation_histories.get(history_key, [])
+
+        try:
+            # Run agent with LLM
+            agent_response = await ask_agent(
+                user_prompt=clean_content, 
+                is_admin=user_is_admin, 
+                conversation_history=history,
+                ambient_context=ambient_context
+            )
+        except Exception as e:
+            error_msg = f"❌ An internal error occurred while processing your request: `{str(e)}`"
+            logger.error(f"Error processing message from {message.author}: {e}", exc_info=True)
+            await message.reply(error_msg)
+            # Alert admin via DM
+            await notify_admins(
+                title="Bot Processing Exception",
+                description=(
+                    f"**User:** {message.author.mention} (`{message.author.name}`)\n"
+                    f"**Channel:** {message.channel.mention if hasattr(message.channel, 'mention') else 'DM'}\n"
+                    f"**Prompt:** `{clean_content}`\n\n"
+                    f"**Error Details:**\n```{str(e)}```"
+                )
+            )
             return
 
-        async with message.channel.typing():
-            user_id = message.author.id
-            user_is_admin = is_admin(user_id)
-            history = user_histories.get(user_id, [])
+        reply_text = agent_response.get("text", "")
+        releases_data = agent_response.get("releases_found")
+        restart_target = agent_response.get("restart_container_target")
 
-            try:
-                # Run agent with LLM
-                agent_response = await ask_agent(
-                    user_prompt=clean_content, 
-                    is_admin=user_is_admin, 
-                    conversation_history=history
+        # If response explicitly contains an error, alert admin
+        if reply_text.startswith("❌") or reply_text.startswith("⚠️"):
+            await notify_admins(
+                title="Service/API Issue Reported",
+                description=(
+                    f"**User:** {message.author.mention} (`{message.author.name}`)\n"
+                    f"**Prompt:** `{clean_content}`\n\n"
+                    f"**Reported Response:**\n{reply_text[:1500]}"
+                ),
+                color=discord.Color.orange()
+            )
+
+        # Update conversation history
+        history.append({"role": "user", "content": clean_content})
+        history.append({"role": "assistant", "content": reply_text})
+        conversation_histories[history_key] = history[-8:]
+
+        # Handle silent fallback to Radarr/Sonarr (DM to Admin with 1-click add button)
+        admin_fallback = agent_response.get("admin_fallback")
+        if admin_fallback and isinstance(admin_fallback, dict):
+            fb_view = AdminDirectAddView(
+                title=admin_fallback.get("title", "Media"),
+                media_type=admin_fallback.get("mediaType", "movie"),
+                item_id=admin_fallback.get("id"),
+                requested_by=message.author.display_name
+            )
+            service_name = "Sonarr" if admin_fallback.get("mediaType") == "tv" else "Radarr"
+            for admin_id in ADMIN_USER_IDS:
+                try:
+                    admin_user = await bot.fetch_user(admin_id)
+                    if admin_user:
+                        embed = discord.Embed(
+                            title="📥 Fallback Media Request",
+                            description=(
+                                f"**{message.author.mention}** (`{message.author.display_name}`) requested **{admin_fallback.get('title')}** ({admin_fallback.get('year', '')}).\n\n"
+                                f"It was not found in Jellyseerr's public catalog, but was matched in **{service_name}** indexers.\n\n"
+                                f"Click below to approve and start downloading."
+                            ),
+                            color=discord.Color.blue()
+                        )
+                        await admin_user.send(embed=embed, view=fb_view)
+                except Exception as e:
+                    logger.error(f"Failed to send admin fallback DM to {admin_id}: {e}")
+
+        pending_req = agent_response.get("pending_request")
+
+        # Choose UI view if applicable
+        view = None
+        if pending_req and isinstance(pending_req, dict):
+            view = JellyseerrApprovalView(
+                title=pending_req.get("title", "Media"),
+                media_type=pending_req.get("mediaType", "movie"),
+                request_id=pending_req.get("request_id"),
+                media_id=pending_req.get("mediaId")
+            )
+        elif user_is_admin:
+            if releases_data and isinstance(releases_data, dict):
+                view = ReleasePickerView(
+                    releases=releases_data.get("items", []), 
+                    author_id=user_id,
+                    service=releases_data.get("service", "radarr")
                 )
-            except Exception as e:
-                error_msg = f"❌ An internal error occurred while processing your request: `{str(e)}`"
-                logger.error(f"Error processing message from {message.author}: {e}", exc_info=True)
-                await message.reply(error_msg)
-                # Alert admin via DM
-                await notify_admins(
-                    title="Bot Processing Exception",
-                    description=(
-                        f"**User:** {message.author.mention} (`{message.author.name}`)\n"
-                        f"**Channel:** {message.channel.mention if hasattr(message.channel, 'mention') else 'DM'}\n"
-                        f"**Prompt:** `{clean_content}`\n\n"
-                        f"**Error Details:**\n```{str(e)}```"
-                    )
-                )
-                return
+            elif restart_target:
+                view = ContainerRestartConfirmView(container_name=restart_target, author_id=user_id)
 
-            reply_text = agent_response.get("text", "")
-            releases_data = agent_response.get("releases_found")
-            restart_target = agent_response.get("restart_container_target")
-
-            # If response explicitly contains an error, alert admin
-            if reply_text.startswith("❌") or reply_text.startswith("⚠️"):
-                await notify_admins(
-                    title="Service/API Issue Reported",
-                    description=(
-                        f"**User:** {message.author.mention} (`{message.author.name}`)\n"
-                        f"**Prompt:** `{clean_content}`\n\n"
-                        f"**Reported Response:**\n{reply_text[:1500]}"
-                    ),
-                    color=discord.Color.orange()
-                )
-
-            # Update conversation history
-            history.append({"role": "user", "content": clean_content})
-            history.append({"role": "assistant", "content": reply_text})
-            user_histories[user_id] = history[-8:]
-
-            pending_req = agent_response.get("pending_request")
-
-            # Choose UI view if applicable
-            view = None
-            if pending_req and isinstance(pending_req, dict):
-                view = JellyseerrApprovalView(
-                    title=pending_req.get("title", "Media"),
-                    media_type=pending_req.get("mediaType", "movie"),
-                    request_id=pending_req.get("request_id"),
-                    media_id=pending_req.get("mediaId")
-                )
-            elif user_is_admin:
-                if releases_data and isinstance(releases_data, dict):
-                    view = ReleasePickerView(
-                        releases=releases_data.get("items", []), 
-                        author_id=user_id,
-                        service=releases_data.get("service", "radarr")
-                    )
-                elif restart_target:
-                    view = ContainerRestartConfirmView(container_name=restart_target, author_id=user_id)
-
-            # Discord message character limit check (2000 chars)
-            if len(reply_text) > 1950:
-                chunks = [reply_text[i:i+1900] for i in range(0, len(reply_text), 1900)]
-                for i, chunk in enumerate(chunks):
-                    if i == len(chunks) - 1 and view:
-                        await message.reply(chunk, view=view)
-                    else:
-                        await message.reply(chunk)
-            else:
-                await message.reply(reply_text, view=view)
+        # Discord message character limit check (2000 chars)
+        if len(reply_text) > 1950:
+            chunks = [reply_text[i:i+1900] for i in range(0, len(reply_text), 1900)]
+            for i, chunk in enumerate(chunks):
+                if i == len(chunks) - 1 and view:
+                    await message.reply(chunk, view=view)
+                else:
+                    await message.reply(chunk)
+        else:
+            await message.reply(reply_text, view=view)
 
 def main():
     if not DISCORD_BOT_TOKEN:

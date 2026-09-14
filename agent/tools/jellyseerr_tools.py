@@ -1,5 +1,15 @@
+import re
 import requests
-from config import JELLYSEERR_URL, JELLYSEERR_API_KEY, JELLYSEERR_BOT_EMAIL, JELLYSEERR_BOT_PASSWORD
+from config import (
+    JELLYSEERR_URL,
+    JELLYSEERR_API_KEY,
+    JELLYSEERR_BOT_EMAIL,
+    JELLYSEERR_BOT_PASSWORD,
+    RADARR_URL,
+    RADARR_API_KEY,
+    SONARR_URL,
+    SONARR_API_KEY
+)
 
 HEADERS = {
     "X-Api-Key": JELLYSEERR_API_KEY,
@@ -7,6 +17,105 @@ HEADERS = {
 }
 
 _bot_session = None
+
+def _sanitize_query(query: str) -> tuple[str, str | None]:
+    """
+    Extracts 4-digit release year if present and returns (clean_query, year_str).
+    e.g. 'Dune: Part Two (2024)' -> ('Dune: Part Two', '2024')
+         'The Matrix 1999' -> ('The Matrix', '1999')
+    """
+    cleaned = query.strip()
+    year_match = re.search(r'[\(\[\{]?\b((?:19|20)\d{2})\b[\)\]\}]?', cleaned)
+    year = None
+    if year_match:
+        year = year_match.group(1)
+        cleaned = re.sub(r'[\(\[\{]?\b(?:19|20)\d{2}\b[\)\]\}]?', '', cleaned).strip()
+        cleaned = re.sub(r'\s+', ' ', cleaned).strip(" -:;,.")
+    return cleaned or query.strip(), year
+
+def _search_jellyseerr_raw(title: str, year: str = None) -> tuple[list[dict], str | None]:
+    """Execute search in Jellyseerr with query sanitization and fallback."""
+    clean_title, extracted_year = _sanitize_query(title)
+    target_year = year or extracted_year
+
+    results = []
+    try:
+        resp = requests.get(
+            f"{JELLYSEERR_URL}/api/v1/search", 
+            params={"query": clean_title}, 
+            headers=HEADERS, 
+            timeout=10
+        )
+        if resp.ok:
+            results = resp.json().get("results", [])
+    except Exception:
+        pass
+
+    # If no results and title had extra words/symbols, try raw title
+    if not results and clean_title != title:
+        try:
+            resp = requests.get(
+                f"{JELLYSEERR_URL}/api/v1/search", 
+                params={"query": title}, 
+                headers=HEADERS, 
+                timeout=10
+            )
+            if resp.ok:
+                results = resp.json().get("results", [])
+        except Exception:
+            pass
+
+    return results, target_year
+
+def _check_radarr_fallback(title: str, year: str = None) -> dict | None:
+    """Silently check Radarr's metadata lookup if Jellyseerr TMDB search yields no results."""
+    if not RADARR_URL or not RADARR_API_KEY:
+        return None
+    try:
+        clean_title, extracted_year = _sanitize_query(title)
+        target_year = year or extracted_year
+        resp = requests.get(
+            f"{RADARR_URL}/api/v3/movie/lookup",
+            params={"term": clean_title},
+            headers={"X-Api-Key": RADARR_API_KEY},
+            timeout=8
+        )
+        if resp.ok:
+            results = resp.json()
+            if results and isinstance(results, list):
+                if target_year:
+                    for m in results:
+                        if str(m.get("year")) == str(target_year):
+                            return m
+                return results[0]
+    except Exception:
+        pass
+    return None
+
+def _check_sonarr_fallback(title: str, year: str = None) -> dict | None:
+    """Silently check Sonarr's metadata lookup if Jellyseerr TVDB search yields no results."""
+    if not SONARR_URL or not SONARR_API_KEY:
+        return None
+    try:
+        clean_title, extracted_year = _sanitize_query(title)
+        target_year = year or extracted_year
+        resp = requests.get(
+            f"{SONARR_URL}/api/v3/series/lookup",
+            params={"term": clean_title},
+            headers={"X-Api-Key": SONARR_API_KEY},
+            timeout=8
+        )
+        if resp.ok:
+            results = resp.json()
+            if results and isinstance(results, list):
+                if target_year:
+                    for s in results:
+                        if str(s.get("year")) == str(target_year):
+                            return s
+                return results[0]
+    except Exception:
+        pass
+    return None
 
 def _get_bot_session() -> requests.Session:
     """Get or create an authenticated Jellyseerr user session for Kewpie (non-admin)."""
@@ -30,6 +139,78 @@ def _get_bot_session() -> requests.Session:
 
 def _check_configured() -> bool:
     return bool(JELLYSEERR_URL and JELLYSEERR_API_KEY)
+
+STATUS_NAMES = {
+    1: "Available to Request",
+    2: "Pending Approval",
+    3: "Processing / Downloading",
+    4: "Partially Available",
+    5: "Available to Watch (In Library)"
+}
+
+def jellyseerr_search(query: str, media_type: str = "all", limit: int = 5) -> list[dict]:
+    """
+    Search for movies and TV shows in the media catalog, checking current availability.
+    Returns title, release year, media type, and server availability status.
+    """
+    if not _check_configured():
+        return [{"error": "Jellyseerr is not configured or API key is missing."}]
+    
+    results, target_year = _search_jellyseerr_raw(query)
+    if not results:
+        # Check fallback in Radarr/Sonarr to report existence if available
+        radarr_match = _check_radarr_fallback(query)
+        if radarr_match:
+            return [{
+                "title": radarr_match.get("title"),
+                "year": str(radarr_match.get("year", "")),
+                "mediaType": "movie",
+                "availability": "Available via Admin Request",
+                "overview": (radarr_match.get("overview") or "")[:140]
+            }]
+        return [{"message": f"No titles found matching '{query}' in the catalog."}]
+
+    limit = min(max(1, limit), 10)
+    
+    # Filter by media_type if specified
+    filtered = []
+    for r in results:
+        rtype = r.get("mediaType")
+        if media_type.lower() in ["movie", "film"] and rtype != "movie":
+            continue
+        if media_type.lower() in ["tv", "series", "show"] and rtype != "tv":
+            continue
+        filtered.append(r)
+
+    if not filtered:
+        filtered = results
+
+    # If a year was specified, sort matching year first
+    if target_year:
+        def year_sort_key(item):
+            item_yr = (item.get("releaseDate") or item.get("firstAirDate") or "")[:4]
+            return 0 if item_yr == str(target_year) else 1
+        filtered.sort(key=year_sort_key)
+
+    output = []
+    for r in filtered[:limit]:
+        media_info = r.get("mediaInfo") or {}
+        status_code = media_info.get("status", 1)
+        status_str = STATUS_NAMES.get(status_code, "Available to Request")
+        year_str = (r.get("releaseDate") or r.get("firstAirDate") or "")[:4]
+        title_str = r.get("title") or r.get("name") or "Unknown"
+
+        output.append({
+            "id": r.get("id"),
+            "title": title_str,
+            "mediaType": r.get("mediaType", "movie"),
+            "year": year_str,
+            "availability": status_str,
+            "isAvailable": status_code == 5,
+            "overview": (r.get("overview") or "")[:140]
+        })
+
+    return output
 
 def jellyseerr_list_requests(status: str = "pending", limit: int = 5) -> list[dict]:
     """List media requests in Jellyseerr/Overseerr (status: 'pending', 'approved', 'all')."""
@@ -70,17 +251,40 @@ def jellyseerr_request_media(title: str, media_type: str = "movie", is_admin: bo
     Search and submit media requests directly to Jellyseerr.
     - If requested by non-admin: Submits via kewpie-bot user session so it enters Jellyseerr as 'Pending Approval' (status: 1).
     - If requested by admin: Submits via Admin API key (auto-approved and queued for download).
+    - If title is not found in Jellyseerr catalog: Silently checks Radarr/Sonarr indexers and flags for admin approval.
     """
     if not _check_configured():
         return {"error": "Jellyseerr is not configured."}
     try:
-        # Search for TMDB/TVDB ID
-        search_resp = requests.get(f"{JELLYSEERR_URL}/api/v1/search", params={"query": title}, headers=HEADERS, timeout=10)
-        search_resp.raise_for_status()
-        results = search_resp.json().get("results", [])
+        results, target_year = _search_jellyseerr_raw(title)
         
+        # If Jellyseerr fails to find it, trigger the silent Radarr/Sonarr fallback
         if not results:
-            return {"error": f"Could not find any movie or TV show matching '{title}'."}
+            if media_type.lower() in ["tv", "series", "show"]:
+                sonarr_match = _check_sonarr_fallback(title, target_year)
+                if sonarr_match:
+                    return {
+                        "status": "unmatched_found_in_sonarr",
+                        "title": sonarr_match.get("title"),
+                        "year": str(sonarr_match.get("year", "")),
+                        "tvdbId": sonarr_match.get("tvdbId"),
+                        "mediaType": "tv",
+                        "overview": (sonarr_match.get("overview") or "")[:140],
+                        "message": f"Couldn't find an exact match in the public catalog for '{title}', but located **{sonarr_match.get('title')}** in indexers. Forwarded to the server administrator for review."
+                    }
+            else:
+                radarr_match = _check_radarr_fallback(title, target_year)
+                if radarr_match:
+                    return {
+                        "status": "unmatched_found_in_radarr",
+                        "title": radarr_match.get("title"),
+                        "year": str(radarr_match.get("year", "")),
+                        "tmdbId": radarr_match.get("tmdbId"),
+                        "mediaType": "movie",
+                        "overview": (radarr_match.get("overview") or "")[:140],
+                        "message": f"Couldn't find an exact match in the public catalog for '{title}', but located **{radarr_match.get('title')}** in indexers. Forwarded to the server administrator for review."
+                    }
+            return {"error": f"Could not find any movie or TV show matching '{title}' in the catalog or indexers."}
         
         matched = None
         for r in results:

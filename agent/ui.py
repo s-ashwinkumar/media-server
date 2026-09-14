@@ -1,7 +1,7 @@
 import discord
 from config import ADMIN_USER_IDS
-from tools.radarr_tools import radarr_grab_release
-from tools.sonarr_tools import sonarr_grab_release
+from tools.radarr_tools import radarr_grab_release, radarr_add_movie
+from tools.sonarr_tools import sonarr_grab_release, sonarr_add_series
 from tools.docker_tools import restart_docker_container
 from tools.jellyseerr_tools import jellyseerr_approve_request, jellyseerr_decline_request
 
@@ -150,3 +150,48 @@ class JellyseerrApprovalView(discord.ui.View):
             color=discord.Color.red()
         )
         await interaction.edit_original_response(embed=embed, view=None)
+
+class AdminDirectAddView(discord.ui.View):
+    """Interactive button sent to Admin DM when Jellyseerr misses a title but Radarr/Sonarr finds it."""
+    def __init__(self, title: str, media_type: str, item_id: int, requested_by: str = "A user"):
+        super().__init__(timeout=86400) # 24 hours
+        self.title = title
+        self.media_type = media_type
+        self.item_id = item_id
+        self.requested_by = requested_by
+
+    @discord.ui.button(label="Approve & Download", style=discord.ButtonStyle.success)
+    async def add_and_download(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_admin_user(interaction.user.id):
+            await interaction.response.send_message("❌ Only administrators can add media.", ephemeral=True)
+            return
+        await interaction.response.defer()
+
+        if self.media_type == "tv":
+            res = sonarr_add_series(tvdb_id=self.item_id, search_now=True)
+        else:
+            res = radarr_add_movie(tmdb_id=self.item_id, search_now=True)
+
+        if res.get("status") == "success":
+            embed = discord.Embed(
+                title="✅ Media Added & Search Triggered",
+                description=(
+                    f"**{self.title}** was added directly to {'Sonarr' if self.media_type == 'tv' else 'Radarr'} by <@{interaction.user.id}>.\n"
+                    f"Originally requested by: **{self.requested_by}**"
+                ),
+                color=discord.Color.green()
+            )
+            await interaction.edit_original_response(embed=embed, view=None)
+        else:
+            await interaction.edit_original_response(
+                content=f"❌ Failed to add media: {res.get('error')}", 
+                view=None
+            )
+
+    @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.secondary)
+    async def dismiss(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_admin_user(interaction.user.id):
+            await interaction.response.send_message("❌ Only administrators can dismiss.", ephemeral=True)
+            return
+        await interaction.response.edit_message(content=f"🚫 Request for **{self.title}** dismissed.", embed=None, view=None)
+

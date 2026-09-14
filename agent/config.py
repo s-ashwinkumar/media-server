@@ -34,6 +34,22 @@ for uid in allowed_users_raw.split(","):
     if cleaned.isdigit():
         ALLOWED_USER_IDS.add(int(cleaned))
 
+# Channel Settings: Dedicated channels where the bot responds to all messages without needing an @mention
+auto_reply_channels_raw = os.getenv("DISCORD_AUTO_REPLY_CHANNEL_IDS", "1541994490137411677")
+AUTO_REPLY_CHANNEL_IDS = set()
+for cid in auto_reply_channels_raw.split(","):
+    cleaned = cid.strip()
+    if cleaned.isdigit():
+        AUTO_REPLY_CHANNEL_IDS.add(int(cleaned))
+
+# Channel names to auto-reply in (defaults to 'media-requests')
+auto_reply_names_raw = os.getenv("DISCORD_AUTO_REPLY_CHANNEL_NAMES", "media-requests")
+AUTO_REPLY_CHANNEL_NAMES = {
+    name.strip().lower().lstrip("#") 
+    for name in auto_reply_names_raw.split(",") 
+    if name.strip()
+}
+
 # LLM / OpenRouter settings
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

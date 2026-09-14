@@ -34,6 +34,7 @@ from tools.system_tools import (
     get_system_stats
 )
 from tools.jellyseerr_tools import (
+    jellyseerr_search,
     jellyseerr_list_requests,
     jellyseerr_request_media,
     jellyseerr_approve_request,
@@ -234,6 +235,22 @@ TOOLS_SCHEMA = [
         }
     },
     # --- Jellyseerr Tools ---
+    {
+        "type": "function",
+        "function": {
+            "name": "jellyseerr_search",
+            "description": "Search the media catalog for movies or TV series to check availability on the server or find titles to request.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The movie or TV show title to search for."},
+                    "media_type": {"type": "string", "enum": ["all", "movie", "tv"], "description": "Filter by type (movie, tv, or all).", "default": "all"},
+                    "limit": {"type": "integer", "description": "Maximum number of search results.", "default": 5}
+                },
+                "required": ["query"]
+            }
+        }
+    },
     {
         "type": "function",
         "function": {
@@ -514,13 +531,12 @@ TOOLS_SCHEMA = [
     }
 ]
 
-# Read-only tools and request tools for non-admin users
+# Read-only tools and request tools for non-admin users (Zero exposure of Radarr/Sonarr/Docker)
 USER_ALLOWED_TOOLS = {
-    "radarr_search_movie",
-    "sonarr_search_series",
-    "sonarr_get_episodes",
-    "jellyfin_get_active_streams",
-    "jellyseerr_request_media"
+    "jellyseerr_search",
+    "jellyseerr_request_media",
+    "jellyseerr_list_requests",
+    "jellyfin_get_active_streams"
 }
 
 TOOL_DISPATCHER = {
@@ -543,6 +559,7 @@ TOOL_DISPATCHER = {
     "sonarr_get_queue": sonarr_get_queue,
     "jellyfin_get_active_streams": jellyfin_get_active_streams,
     "jellyfin_scan_library": jellyfin_scan_library,
+    "jellyseerr_search": jellyseerr_search,
     "jellyseerr_list_requests": jellyseerr_list_requests,
     "jellyseerr_request_media": jellyseerr_request_media,
     "jellyseerr_approve_request": jellyseerr_approve_request,
