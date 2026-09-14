@@ -75,6 +75,7 @@ services:
     restart: unless-stopped
     labels:
       - "wud.tag.transform=^v?(\\d+\\.\\d+\\.\\d+).* => $$1"
+      - "wud.tag.include=^v?\\d+\\.\\d+\\.\\d+.*-ls\\d+$$"
   flaresolverr:
     image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
     container_name: flaresolverr
@@ -316,6 +317,7 @@ services:
       - "traefik.http.routers.bazarr.entrypoints=web"
       - "traefik.http.services.bazarr.loadbalancer.server.port=6767"
       - "wud.tag.transform=^v?(\\d+\\.\\d+\\.\\d+).* => $$1"
+      - "wud.tag.include=^v?\\d+\\.\\d+\\.\\d+.*-ls\\d+$$"
 
   wud:
     image: getwud/wud:9.0.2
