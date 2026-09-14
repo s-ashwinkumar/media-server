@@ -326,6 +326,8 @@ services:
       - WUD_TRIGGER_HTTP_KEWPIE_URL=http://host.docker.internal:8088/wud-webhook
       - WUD_TRIGGER_HTTP_KEWPIE_METHOD=POST
       - WUD_TRIGGER_HTTP_KEWPIE_ONCE=true
+      - WUD_TRIGGER_DOCKER_LOCAL_AUTO=false
+      - WUD_TRIGGER_DOCKER_LOCAL_PRUNE=true
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${CONFIGS_PATH}/wud:/store

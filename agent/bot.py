@@ -6,7 +6,7 @@ from aiohttp import web
 
 from config import DISCORD_BOT_TOKEN, ADMIN_USER_IDS, ALLOWED_USER_IDS
 from llm import ask_agent
-from ui import ReleasePickerView, ContainerRestartConfirmView, JellyseerrApprovalView
+from ui import ReleasePickerView, ContainerRestartConfirmView, JellyseerrApprovalView, ContainerUpdateConfirmView
 from tools.system_tools import get_disk_space, get_system_stats
 from tools.docker_tools import list_docker_containers
 
@@ -30,7 +30,7 @@ def is_admin(user_id: int) -> bool:
         return True
     return user_id in ADMIN_USER_IDS
 
-async def notify_admins(title: str, description: str, color: discord.Color = discord.Color.red(), prefix: str = "🚨 "):
+async def notify_admins(title: str, description: str, color: discord.Color = discord.Color.red(), prefix: str = "🚨 ", view_factory=None):
     """Send an alert DM to all configured administrators."""
     for admin_id in ADMIN_USER_IDS:
         try:
@@ -41,7 +41,11 @@ async def notify_admins(title: str, description: str, color: discord.Color = dis
                     description=description,
                     color=color
                 )
-                await user.send(embed=embed)
+                if view_factory:
+                    view = view_factory(admin_id)
+                    await user.send(embed=embed, view=view)
+                else:
+                    await user.send(embed=embed)
         except Exception as e:
             logger.error(f"Failed to send DM alert to admin {admin_id}: {e}")
 
@@ -110,13 +114,14 @@ async def handle_wud_webhook(request: web.Request):
                 desc_lines.append(f"• **Current Digest:** `{short_curr}`")
                 desc_lines.append(f"• **New Digest:** `{short_new}`")
 
-            desc_lines.append(f"\n💡 *Review on [What's Up Docker](http://wud.kewpie.top) or run `docker compose pull {name}`.*")
+            desc_lines.append(f"\n💡 *Tap **Update Now** below to pull & recreate via Docker Compose, or review on [What's Up Docker](http://wud.kewpie.top).*")
 
             await notify_admins(
                 title=f"Container Update: {name}",
                 description="\n".join(desc_lines),
                 color=discord.Color.blue(),
-                prefix="📦 "
+                prefix="📦 ",
+                view_factory=lambda uid, cname=name: ContainerUpdateConfirmView(container_name=cname, author_id=uid)
             )
 
         return web.json_response({"status": "ok", "processed": len(containers)})
@@ -228,6 +233,23 @@ async def cmd_disk(ctx):
             inline=False
         )
     await ctx.send(embed=embed)
+
+@bot.command(name="update")
+async def cmd_update(ctx, container_name: str = None):
+    """Pull latest image and recreate a container service (Admin only)."""
+    if not is_admin(ctx.author.id):
+        await ctx.send("❌ This command is restricted to administrators.")
+        return
+    if not container_name:
+        await ctx.send("❌ Please specify a container name, e.g. `!update jellyfin`")
+        return
+
+    name = container_name.lower().strip()
+    view = ContainerUpdateConfirmView(container_name=name, author_id=ctx.author.id)
+    await ctx.send(
+        f"Click **Update Now** to pull the latest image and recreate **`{name}`** via Docker Compose:",
+        view=view
+    )
 
 @bot.event
 async def on_message(message: discord.Message):

@@ -1,8 +1,9 @@
+import asyncio
 import discord
 from config import ADMIN_USER_IDS
 from tools.radarr_tools import radarr_grab_release
 from tools.sonarr_tools import sonarr_grab_release
-from tools.docker_tools import restart_docker_container
+from tools.docker_tools import restart_docker_container, update_docker_container
 from tools.jellyseerr_tools import jellyseerr_approve_request, jellyseerr_decline_request
 
 def _is_admin_user(user_id: int) -> bool:
@@ -150,3 +151,63 @@ class JellyseerrApprovalView(discord.ui.View):
             color=discord.Color.red()
         )
         await interaction.edit_original_response(embed=embed, view=None)
+
+class ContainerUpdateConfirmView(discord.ui.View):
+    """Interactive Discord buttons for 1-click container update and recreation."""
+    def __init__(self, container_name: str, author_id: int):
+        super().__init__(timeout=86400)  # 24 hour timeout
+        self.container_name = container_name
+        self.author_id = author_id
+
+    @discord.ui.button(label="Update Now", style=discord.ButtonStyle.success, emoji="🚀")
+    async def update(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_admin_user(interaction.user.id):
+            await interaction.response.send_message("❌ Only administrators can trigger container updates.", ephemeral=True)
+            return
+
+        # Disable button to prevent duplicate clicks
+        button.disabled = True
+        button.label = "Updating..."
+        await interaction.response.edit_message(view=self)
+
+        status_msg = await interaction.followup.send(
+            f"⏳ Pulling latest image and recreating **`{self.container_name}`** via Docker Compose...",
+            ephemeral=False
+        )
+
+        res = await asyncio.to_thread(update_docker_container, self.container_name)
+
+        if res.get("status") == "success":
+            embed = discord.Embed(
+                title="✅ Container Updated",
+                description=(
+                    f"Container **`{self.container_name}`** was updated and recreated successfully by <@{interaction.user.id}>!\n\n"
+                    f"```\n{res.get('output', '').strip()[:1000]}\n```"
+                ),
+                color=discord.Color.green()
+            )
+            await status_msg.edit(content=None, embed=embed)
+            button.label = "Updated"
+            button.style = discord.ButtonStyle.secondary
+            await interaction.edit_original_response(view=self)
+        else:
+            embed = discord.Embed(
+                title="❌ Update Failed",
+                description=f"Error updating **`{self.container_name}`**:\n```\n{res.get('error', 'Unknown error')[:1000]}\n```",
+                color=discord.Color.red()
+            )
+            await status_msg.edit(content=None, embed=embed)
+            button.disabled = False
+            button.label = "Retry Update"
+            button.style = discord.ButtonStyle.danger
+            await interaction.edit_original_response(view=self)
+
+    @discord.ui.button(label="Dismiss", style=discord.ButtonStyle.secondary)
+    async def dismiss(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not _is_admin_user(interaction.user.id):
+            await interaction.response.send_message("❌ Only administrators can dismiss.", ephemeral=True)
+            return
+        for item in self.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self)
+
