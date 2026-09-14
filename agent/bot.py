@@ -2,6 +2,7 @@ import logging
 import discord
 import asyncio
 from discord.ext import commands, tasks
+from aiohttp import web
 
 from config import (
     DISCORD_BOT_TOKEN, 
@@ -11,7 +12,13 @@ from config import (
     AUTO_REPLY_CHANNEL_NAMES
 )
 from llm import ask_agent
-from ui import ReleasePickerView, ContainerRestartConfirmView, JellyseerrApprovalView, AdminDirectAddView
+from ui import (
+    ReleasePickerView, 
+    ContainerRestartConfirmView, 
+    JellyseerrApprovalView, 
+    AdminDirectAddView, 
+    ContainerUpdateConfirmView
+)
 from tools.system_tools import get_disk_space, get_system_stats
 from tools.docker_tools import list_docker_containers
 
@@ -35,20 +42,122 @@ def is_admin(user_id: int) -> bool:
         return True
     return user_id in ADMIN_USER_IDS
 
-async def notify_admins(title: str, description: str, color: discord.Color = discord.Color.red()):
+async def notify_admins(title: str, description: str, color: discord.Color = discord.Color.red(), prefix: str = "🚨 ", view_factory=None):
     """Send an alert DM to all configured administrators."""
     for admin_id in ADMIN_USER_IDS:
         try:
             user = await bot.fetch_user(admin_id)
             if user:
                 embed = discord.Embed(
-                    title=f"🚨 {title}",
+                    title=f"{prefix}{title}".strip(),
                     description=description,
                     color=color
                 )
-                await user.send(embed=embed)
+                if view_factory:
+                    view = view_factory(admin_id)
+                    await user.send(embed=embed, view=view)
+                else:
+                    await user.send(embed=embed)
         except Exception as e:
             logger.error(f"Failed to send DM alert to admin {admin_id}: {e}")
+
+async def handle_wud_webhook(request: web.Request):
+    """Handle incoming webhook POST requests from What's Up Docker (WUD)."""
+    try:
+        data = await request.json()
+        logger.info("Received WUD webhook event")
+    except Exception as e:
+        logger.error(f"Error parsing WUD webhook JSON: {e}")
+        return web.json_response({"error": "Invalid JSON"}, status=400)
+
+    try:
+        if isinstance(data, list):
+            containers = data
+        elif isinstance(data, dict):
+            if "container" in data and isinstance(data["container"], dict):
+                containers = [data["container"]]
+            elif "containers" in data and isinstance(data["containers"], list):
+                containers = data["containers"]
+            else:
+                containers = [data]
+        else:
+            return web.json_response({"error": "Invalid payload format"}, status=400)
+
+        for container in containers:
+            name = container.get("displayName") or container.get("name") or "Unknown Container"
+            image_info = container.get("image", {})
+            if isinstance(image_info, dict):
+                image_name = image_info.get("name", "")
+                tag_dict = image_info.get("tag", {})
+                current_tag = tag_dict.get("value", "latest") if isinstance(tag_dict, dict) else str(tag_dict)
+                digest_dict = image_info.get("digest", {})
+                current_digest = digest_dict.get("value", "") if isinstance(digest_dict, dict) else str(digest_dict)
+            else:
+                image_name = str(image_info)
+                current_tag = "latest"
+                current_digest = ""
+
+            result_info = container.get("result", {})
+            if isinstance(result_info, dict):
+                new_tag = result_info.get("tag") or current_tag
+                new_digest = result_info.get("digest", "")
+            else:
+                new_tag = current_tag
+                new_digest = ""
+
+            update_kind = container.get("updateKind", {})
+            if isinstance(update_kind, dict):
+                kind_str = update_kind.get("kind", "new image")
+                semver_diff = update_kind.get("semverDiff")
+                kind_display = f"{kind_str} ({semver_diff})" if semver_diff else kind_str
+            else:
+                kind_display = "new image"
+
+            desc_lines = [
+                f"A new Docker update was detected by **What's Up Docker**:\n",
+                f"• **Container:** `{name}`",
+                f"• **Image:** `{image_name}:{new_tag}`",
+                f"• **Update Detail:** `{kind_display}`",
+            ]
+
+            if current_digest and new_digest and current_digest != new_digest:
+                short_curr = current_digest[:19] + "..." if len(current_digest) > 20 else current_digest
+                short_new = new_digest[:19] + "..." if len(new_digest) > 20 else new_digest
+                desc_lines.append(f"• **Current Digest:** `{short_curr}`")
+                desc_lines.append(f"• **New Digest:** `{short_new}`")
+
+            desc_lines.append(f"\n💡 *Tap **Update Now** below to pull & recreate via Docker Compose, or review on [What's Up Docker](http://wud.kewpie.top).*")
+
+            await notify_admins(
+                title=f"Container Update: {name}",
+                description="\n".join(desc_lines),
+                color=discord.Color.blue(),
+                prefix="📦 ",
+                view_factory=lambda uid, cname=name: ContainerUpdateConfirmView(container_name=cname, author_id=uid)
+            )
+
+        return web.json_response({"status": "ok", "processed": len(containers)})
+    except Exception as e:
+        logger.error(f"Error handling WUD webhook: {e}", exc_info=True)
+        return web.json_response({"error": str(e)}, status=500)
+
+async def handle_wud_health(request: web.Request):
+    """Health check endpoint for the webhook server."""
+    return web.json_response({"status": "ok", "service": "kewpie-wud-webhook"})
+
+async def start_webhook_server():
+    """Start local aiohttp server to listen for WUD webhooks on port 8088."""
+    try:
+        app = web.Application()
+        app.router.add_post('/wud-webhook', handle_wud_webhook)
+        app.router.add_get('/wud-webhook', handle_wud_health)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', 8088)
+        await site.start()
+        logger.info("WUD Webhook HTTP server started on http://0.0.0.0:8088/wud-webhook")
+    except Exception as e:
+        logger.error(f"Failed to start WUD webhook server: {e}", exc_info=True)
 
 @tasks.loop(minutes=30)
 async def disk_health_monitor():
@@ -84,11 +193,17 @@ async def on_ready():
     await bot.change_presence(activity=activity)
     if not disk_health_monitor.is_running():
         disk_health_monitor.start()
+
+    if not getattr(bot, "_wud_server_started", False):
+        bot._wud_server_started = True
+        asyncio.create_task(start_webhook_server())
+
     print(f"\n==========================================")
     print(f" Media Server Agent is Online as: {bot.user}")
     print(f" Admin User IDs: {ADMIN_USER_IDS or 'All (No admin whitelist set)'}")
     print(f" General Access: {'Open to all server members' if not ALLOWED_USER_IDS else ALLOWED_USER_IDS}")
     print(f" Auto-Reply Channels: {', '.join(['#' + n for n in AUTO_REPLY_CHANNEL_NAMES]) if AUTO_REPLY_CHANNEL_NAMES else ''} {AUTO_REPLY_CHANNEL_IDS if AUTO_REPLY_CHANNEL_IDS else ''}")
+    print(f" Webhook Server: http://0.0.0.0:8088/wud-webhook")
     print(f"==========================================\n")
 
 @bot.command(name="status")
@@ -131,6 +246,23 @@ async def cmd_disk(ctx):
             inline=False
         )
     await ctx.send(embed=embed)
+
+@bot.command(name="update")
+async def cmd_update(ctx, container_name: str = None):
+    """Pull latest image and recreate a container service (Admin only)."""
+    if not is_admin(ctx.author.id):
+        await ctx.send("❌ This command is restricted to administrators.")
+        return
+    if not container_name:
+        await ctx.send("❌ Please specify a container name, e.g. `!update jellyfin`")
+        return
+
+    name = container_name.lower().strip()
+    view = ContainerUpdateConfirmView(container_name=name, author_id=ctx.author.id)
+    await ctx.send(
+        f"Click **Update Now** to pull the latest image and recreate **`{name}`** via Docker Compose:",
+        view=view
+    )
 
 @bot.event
 async def on_message(message: discord.Message):

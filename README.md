@@ -18,6 +18,7 @@ Docker Compose stack for a self-hosted media server: Jellyfin, *arr apps, qBitto
 | [Traefik](https://traefik.io/) | Reverse proxy (`*.your-domain`) |
 | [Homepage](https://gethomepage.dev/) | Dashboard |
 | [Filebrowser](https://filebrowser.org/) | Web file manager |
+| [What's Up Docker](https://github.com/fmartinou/whats-up-docker) | Container update monitoring & alerts |
 
 See [architecture.md](architecture.md) for routing, storage layout, and port reference.
 
@@ -71,6 +72,7 @@ Services are reached via Traefik subdomains. Set `TRAEFIK_DOMAIN` in `.env`, the
 | SABnzbd | `http://sabnzbd.<domain>` |
 | Homepage | `http://homepage.<domain>` |
 | Filebrowser | `http://filebrowser.<domain>` |
+| What's Up Docker | `http://wud.<domain>` or `http://<server-ip>:3001` |
 | Traefik dashboard | `http://traefik.<domain>` or `http://<server-ip>:8083` |
 
 **DNS:** Traefik routes by hostname, but something must resolve each subdomain to your server IP.
