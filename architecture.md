@@ -76,6 +76,7 @@ Host(`jellyseerr.${TRAEFIK_DOMAIN:-local}`) → jellyseerr:5055
 | SABnzbd | 8082 | `sabnzbd.<domain>` |
 | Filebrowser | 8081 | `filebrowser.<domain>` |
 | Bazarr | 6767 | `bazarr.<domain>` |
+| What's Up Docker | 3001 | `wud.<domain>` |
 
 Prefer Traefik subdomains for daily use; direct ports are useful for debugging.
 
