@@ -72,6 +72,23 @@
           url: http://wud:3000
           username: {{HOMEPAGE_VAR_WUD_USER}}
           password: {{HOMEPAGE_VAR_WUD_PASSWORD}}
+    - Kewpie (Media Agent):
+        href: https://discord.com/channels/1541994488011169968/1541994490137411677
+        description: 8088 - Discord AI media concierge (#media-requests)
+        icon: discord.png
+        ping: http://172.18.0.1:8088/wud-webhook
+        widget:
+          type: customapi
+          url: http://172.18.0.1:8088/api/status
+          mappings:
+            - field: status
+              label: Status
+            - field: model
+              label: Model
+            - field: latency
+              label: Ping
+            - field: uptime
+              label: Uptime
 
 
 - Downloaders:

@@ -13,5 +13,8 @@ venv/
 *$py.class
 .pytest_cache/
 
-# Homepage logs
+# Homepage logs & auto-generated sample templates
 homepage/logs/
+homepage/bookmarks.yaml
+homepage/kubernetes.yaml
+homepage/proxmox.yaml

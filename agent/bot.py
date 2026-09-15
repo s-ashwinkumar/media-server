@@ -4,12 +4,14 @@ import asyncio
 from discord.ext import commands, tasks
 from aiohttp import web
 
+import time
 from config import (
     DISCORD_BOT_TOKEN, 
     ADMIN_USER_IDS, 
     ALLOWED_USER_IDS, 
     AUTO_REPLY_CHANNEL_IDS,
-    AUTO_REPLY_CHANNEL_NAMES
+    AUTO_REPLY_CHANNEL_NAMES,
+    PRIMARY_MODEL
 )
 from llm import ask_agent
 from ui import (
@@ -145,12 +147,27 @@ async def handle_wud_health(request: web.Request):
     """Health check endpoint for the webhook server."""
     return web.json_response({"status": "ok", "service": "kewpie-wud-webhook"})
 
+async def handle_agent_status(request: web.Request):
+    """Status endpoint for Homepage customapi widget and monitoring."""
+    start_t = getattr(bot, "_start_time", time.time())
+    uptime_sec = int(time.time() - start_t)
+    uptime_str = f"{uptime_sec // 3600}h {(uptime_sec % 3600) // 60}m" if uptime_sec >= 3600 else f"{uptime_sec // 60}m"
+    return web.json_response({
+        "status": "Online" if bot.is_ready() else "Connecting",
+        "bot": str(bot.user) if bot.user else "Kewpie",
+        "model": PRIMARY_MODEL.split("/")[-1],
+        "latency": f"{round(bot.latency * 1000)}ms" if bot.latency else "0ms",
+        "guilds": len(bot.guilds),
+        "uptime": uptime_str
+    })
+
 async def start_webhook_server():
     """Start local aiohttp server to listen for WUD webhooks on port 8088."""
     try:
         app = web.Application()
         app.router.add_post('/wud-webhook', handle_wud_webhook)
         app.router.add_get('/wud-webhook', handle_wud_health)
+        app.router.add_get('/api/status', handle_agent_status)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, '0.0.0.0', 8088)
@@ -193,6 +210,9 @@ async def on_ready():
     await bot.change_presence(activity=activity)
     if not disk_health_monitor.is_running():
         disk_health_monitor.start()
+
+    if not hasattr(bot, "_start_time"):
+        bot._start_time = time.time()
 
     if not getattr(bot, "_wud_server_started", False):
         bot._wud_server_started = True
