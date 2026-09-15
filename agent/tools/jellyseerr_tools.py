@@ -18,6 +18,47 @@ HEADERS = {
 
 _bot_session = None
 
+def _extract_seasons(query: str, seasons: any = None) -> tuple[str, any]:
+    """
+    Extracts season numbers from arguments or title string.
+    e.g. ('Slow Horses Season 1', 'all') -> ('Slow Horses', [1])
+         ('Slow Horses S01-S02', 'all') -> ('Slow Horses', [1, 2])
+         ('Slow Horses', [1]) -> ('Slow Horses', [1])
+    """
+    parsed_seasons = None
+    if seasons and seasons != "all":
+        if isinstance(seasons, int):
+            parsed_seasons = [seasons]
+        elif isinstance(seasons, list):
+            parsed_seasons = [int(s) for s in seasons if str(s).isdigit()]
+        elif isinstance(seasons, str):
+            digits = re.findall(r'\b\d+\b', seasons)
+            if digits:
+                parsed_seasons = [int(d) for d in digits]
+
+    clean_query = query
+    if not parsed_seasons:
+        word_to_num = {
+            "one": "1", "two": "2", "three": "3", "four": "4", "five": "5",
+            "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10"
+        }
+        normalized_q = query
+        for word, num in word_to_num.items():
+            normalized_q = re.sub(rf'\b(?:season|s)\s+{word}\b', f'season {num}', normalized_q, flags=re.IGNORECASE)
+
+        pattern = r"\b(?:season|s)\s*(\d+)(?:\s*(?:-|to)\s*(?:season|s)?\s*(\d+))?\b"
+        s_match = re.search(pattern, normalized_q, re.IGNORECASE)
+        if s_match:
+            start_s = int(s_match.group(1))
+            end_s = int(s_match.group(2)) if s_match.group(2) else start_s
+            parsed_seasons = list(range(start_s, end_s + 1))
+            clean_query = re.sub(pattern, "", normalized_q, flags=re.IGNORECASE)
+            for word in word_to_num.keys():
+                clean_query = re.sub(rf"\b(?:season|s)\s+{word}\b", "", clean_query, flags=re.IGNORECASE)
+            clean_query = re.sub(r"\s+", " ", clean_query).strip(" -:;,.")
+
+    return clean_query or query, parsed_seasons or "all"
+
 def _sanitize_query(query: str) -> tuple[str, str | None]:
     """
     Extracts 4-digit release year if present and returns (clean_query, year_str).
@@ -35,7 +76,8 @@ def _sanitize_query(query: str) -> tuple[str, str | None]:
 
 def _search_jellyseerr_raw(title: str, year: str = None) -> tuple[list[dict], str | None]:
     """Execute search in Jellyseerr with query sanitization and fallback."""
-    clean_title, extracted_year = _sanitize_query(title)
+    title_no_seasons, _ = _extract_seasons(title)
+    clean_title, extracted_year = _sanitize_query(title_no_seasons)
     target_year = year or extracted_year
 
     results = []
@@ -246,22 +288,24 @@ def jellyseerr_list_requests(status: str = "pending", limit: int = 5) -> list[di
     except Exception as e:
         return [{"error": f"Failed to list Jellyseerr requests: {str(e)}"}]
 
-def jellyseerr_request_media(title: str, media_type: str = "movie", is_admin: bool = False, force_approve: bool = False) -> dict:
+def jellyseerr_request_media(title: str, media_type: str = "movie", seasons: any = "all", is_admin: bool = False, force_approve: bool = False) -> dict:
     """
     Search and submit media requests directly to Jellyseerr.
     - If requested by non-admin: Submits via kewpie-bot user session so it enters Jellyseerr as 'Pending Approval' (status: 1).
     - If requested by admin: Submits via Admin API key (auto-approved and queued for download).
     - If title is not found in Jellyseerr catalog: Silently checks Radarr/Sonarr indexers and flags for admin approval.
+    - If media is a TV series and specific seasons are requested, only those seasons are queued.
     """
     if not _check_configured():
         return {"error": "Jellyseerr is not configured."}
     try:
-        results, target_year = _search_jellyseerr_raw(title)
+        clean_title_no_season, parsed_seasons = _extract_seasons(title, seasons)
+        results, target_year = _search_jellyseerr_raw(clean_title_no_season)
         
         # If Jellyseerr fails to find it, trigger the silent Radarr/Sonarr fallback
         if not results:
             if media_type.lower() in ["tv", "series", "show"]:
-                sonarr_match = _check_sonarr_fallback(title, target_year)
+                sonarr_match = _check_sonarr_fallback(clean_title_no_season, target_year)
                 if sonarr_match:
                     return {
                         "status": "unmatched_found_in_sonarr",
@@ -273,7 +317,7 @@ def jellyseerr_request_media(title: str, media_type: str = "movie", is_admin: bo
                         "message": f"Couldn't find an exact match in the public catalog for '{title}', but located **{sonarr_match.get('title')}** in indexers. Forwarded to the server administrator for review."
                     }
             else:
-                radarr_match = _check_radarr_fallback(title, target_year)
+                radarr_match = _check_radarr_fallback(clean_title_no_season, target_year)
                 if radarr_match:
                     return {
                         "status": "unmatched_found_in_radarr",
@@ -307,39 +351,59 @@ def jellyseerr_request_media(title: str, media_type: str = "movie", is_admin: bo
             "mediaType": actual_type
         }
         if actual_type == "tv":
-            payload["seasons"] = "all"
+            payload["seasons"] = parsed_seasons
 
-        # If non-admin and not force_approved by admin, submit through the kewpie-bot session
+        season_desc = f" (Season {', '.join(map(str, parsed_seasons))})" if isinstance(parsed_seasons, list) else ""
+
+        # Non-admin request
         if not is_admin and not force_approve:
             bot_session = _get_bot_session()
-            if bot_session:
-                req_resp = bot_session.post(f"{JELLYSEERR_URL}/api/v1/request", json=payload, timeout=15)
-                req_resp.raise_for_status()
-                req_data = req_resp.json()
-                req_id = req_data.get("id")
+            session_to_use = bot_session if bot_session else requests
+            h = {} if bot_session else HEADERS
+            req_resp = session_to_use.post(f"{JELLYSEERR_URL}/api/v1/request", json=payload, headers=h, timeout=15)
+        else:
+            # Admin request (auto-approved via admin API key)
+            req_resp = requests.post(f"{JELLYSEERR_URL}/api/v1/request", json=payload, headers=HEADERS, timeout=15)
+
+        if req_resp.ok:
+            req_data = req_resp.json()
+            req_id = req_data.get("id")
+            if not is_admin and not force_approve:
                 return {
                     "status": "pending_approval",
                     "requestId": req_id,
                     "title": media_title,
                     "year": year,
                     "mediaType": actual_type,
-                    "message": f"Submitted request for **{media_title}** (#{req_id}) into Jellyseerr. It is **Pending Approval** by an administrator."
+                    "message": f"Submitted request for **{media_title}**{season_desc} (#{req_id}) into Jellyseerr. It is **Pending Approval** by an administrator."
                 }
+            return {
+                "status": "success",
+                "requestId": req_id,
+                "title": media_title,
+                "year": year,
+                "mediaType": actual_type,
+                "message": f"Successfully approved and queued **{media_title}**{season_desc} (#{req_id}) in Jellyseerr for download!"
+            }
 
-        # Admin request or Admin approved -> Submit via Admin API key (auto-approved)
-        req_resp = requests.post(f"{JELLYSEERR_URL}/api/v1/request", json=payload, headers=HEADERS, timeout=15)
-        req_resp.raise_for_status()
-        req_data = req_resp.json()
-        req_id = req_data.get("id")
-        
-        return {
-            "status": "success",
-            "requestId": req_id,
-            "title": media_title,
-            "year": year,
-            "mediaType": actual_type,
-            "message": f"Successfully approved and queued **{media_title}** (#{req_id}) for download!"
-        }
+        # If request was not OK (e.g. 400 or 409 Conflict)
+        try:
+            err_json = req_resp.json()
+            err_msg = err_json.get("message") or err_json.get("error") or req_resp.text
+        except Exception:
+            err_msg = req_resp.text
+
+        err_lower = str(err_msg).lower()
+        if "already exists" in err_lower or "already requested" in err_lower or "already available" in err_lower:
+            return {
+                "status": "already_exists",
+                "title": media_title,
+                "year": year,
+                "mediaType": actual_type,
+                "message": f"ℹ️ **{media_title}**{season_desc} is already present in your server library or has already been requested in Jellyseerr. Jellyseerr does not permit duplicate requests."
+            }
+
+        return {"error": f"Failed to submit Jellyseerr request (HTTP {req_resp.status_code}): {err_msg}"}
     except Exception as e:
         return {"error": f"Failed to submit Jellyseerr request: {str(e)}"}
 

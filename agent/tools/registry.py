@@ -269,12 +269,17 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "jellyseerr_request_media",
-            "description": "Submit a new movie or TV show request to the Jellyseerr approval queue.",
+            "description": "Submit a new movie or TV series request to Jellyseerr. ALWAYS use this tool first for all media requests (including admins). Supports requesting specific seasons for TV series.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "The title of the movie or TV show to request."},
-                    "media_type": {"type": "string", "enum": ["movie", "tv"], "description": "Whether it's a movie or tv series.", "default": "movie"}
+                    "media_type": {"type": "string", "enum": ["movie", "tv"], "description": "Whether it's a movie or tv series.", "default": "movie"},
+                    "seasons": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                        "description": "Optional list of season numbers to request for a TV series (e.g. [1] for Season 1, [1, 2] for Seasons 1 and 2). Defaults to all seasons if omitted."
+                    }
                 },
                 "required": ["title"]
             }
@@ -487,7 +492,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "sonarr_add_series",
-            "description": "Add a new TV series to Sonarr library and optionally search for missing episodes (Admin only).",
+            "description": "EMERGENCY/MANUAL OVERRIDE ONLY: Add a new TV series directly to Sonarr. DO NOT use this for normal requests—ALWAYS use jellyseerr_request_media first. Only use this if Jellyseerr cannot locate the show in TMDB or if the admin explicitly commands direct Sonarr bypass.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -503,7 +508,7 @@ TOOLS_SCHEMA = [
         "type": "function",
         "function": {
             "name": "radarr_add_movie",
-            "description": "Add a new movie to Radarr library and search indexers (Admin only).",
+            "description": "EMERGENCY/MANUAL OVERRIDE ONLY: Add a new movie directly to Radarr. DO NOT use this for normal requests—ALWAYS use jellyseerr_request_media first. Only use this if Jellyseerr cannot locate the movie in TMDB or if the admin explicitly commands direct Radarr bypass.",
             "parameters": {
                 "type": "object",
                 "properties": {
