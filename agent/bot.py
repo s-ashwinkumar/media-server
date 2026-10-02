@@ -2,6 +2,9 @@ import logging
 import discord
 import asyncio
 from discord.ext import commands, tasks
+import json
+import subprocess
+import aiohttp
 from aiohttp import web
 
 import time
@@ -161,6 +164,78 @@ async def handle_agent_status(request: web.Request):
         "uptime": uptime_str
     })
 
+_vpn_ip_cache = {"data": None, "expires": 0}
+
+async def get_vpn_info() -> dict:
+    """Retrieve VPN IP and location info with caching and container tunnel fallback."""
+    now = time.time()
+    if _vpn_ip_cache["data"] and now < _vpn_ip_cache["expires"]:
+        return _vpn_ip_cache["data"]
+
+    # 1. Try querying Gluetun's internal HTTP API first
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
+            async with session.get("http://172.18.0.2:8000/v1/publicip/ip", headers={"X-API-Key": "123456"}) as resp:
+                if resp.status == 200:
+                    text = await resp.text()
+                    try:
+                        data = json.loads(text)
+                        if data.get("public_ip") and data.get("country"):
+                            _vpn_ip_cache["data"] = data
+                            _vpn_ip_cache["expires"] = now + 120
+                            return data
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+    # 2. Resilient fallback: Query directly through the surfshark container tunnel
+    try:
+        loop = asyncio.get_running_loop()
+        def _fetch_from_container():
+            out = subprocess.check_output(
+                ["docker", "exec", "surfshark", "wget", "-qO-", "https://ifconfig.co/json"],
+                timeout=4
+            ).decode("utf-8")
+            return json.loads(out)
+
+        info = await loop.run_in_executor(None, _fetch_from_container)
+        if info.get("ip"):
+            res = {
+                "public_ip": info.get("ip"),
+                "country": info.get("country", "United States"),
+                "region": info.get("region_name") or info.get("city") or "Online",
+                "city": info.get("city", ""),
+                "postal_code": info.get("zip_code", ""),
+                "timezone": info.get("time_zone", ""),
+            }
+            _vpn_ip_cache["data"] = res
+            _vpn_ip_cache["expires"] = now + 120
+            return res
+    except Exception as e:
+        logger.warning(f"Failed to fetch VPN IP through surfshark container: {e}")
+
+    if _vpn_ip_cache["data"]:
+        return _vpn_ip_cache["data"]
+
+    return {"public_ip": "Unavailable", "country": "United States", "region": "Protected"}
+
+async def handle_gluetun_ip(request: web.Request):
+    """Resilient proxy endpoint for Homepage's gluetun widget."""
+    info = await get_vpn_info()
+    return web.json_response(info)
+
+async def handle_vpn_status(request: web.Request):
+    """General VPN status endpoint for customapi widgets and monitoring."""
+    info = await get_vpn_info()
+    return web.json_response({
+        "status": "Protected" if info.get("public_ip") != "Unavailable" else "Connecting",
+        "ip": info.get("public_ip", "Unknown"),
+        "location": f"{info.get('city', '')}, {info.get('region', '')}".strip(", ") or info.get("country", ""),
+        "country": info.get("country", ""),
+        "provider": "Surfshark (OpenVPN)"
+    })
+
 async def start_webhook_server():
     """Start local aiohttp server to listen for WUD webhooks on port 8088."""
     try:
@@ -168,6 +243,8 @@ async def start_webhook_server():
         app.router.add_post('/wud-webhook', handle_wud_webhook)
         app.router.add_get('/wud-webhook', handle_wud_health)
         app.router.add_get('/api/status', handle_agent_status)
+        app.router.add_get('/api/vpn', handle_vpn_status)
+        app.router.add_get('/gluetun/v1/publicip/ip', handle_gluetun_ip)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, '0.0.0.0', 8088)
