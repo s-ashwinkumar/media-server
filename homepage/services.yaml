@@ -110,7 +110,7 @@
         container: surfshark
         widget:
             type: gluetun
-            url: http://172.18.0.1:8088/gluetun
+            url: http://surfshark:8000
             key: 123456
     - Flaresolverr:
         href: http://flaresolverr.kewpie.top
