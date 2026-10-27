@@ -10,6 +10,7 @@
         container: jellyfin
         widget:
           type: jellyfin
+          version: 2
           url: http://jellyfin:8096
           key: {{HOMEPAGE_VAR_JELLYFIN_API_KEY}}
     - Jellyseerr:

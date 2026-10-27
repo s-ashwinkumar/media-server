@@ -5,7 +5,7 @@ networks:
 services:
   traefik:
     # v3.6+ is required for Docker API >= 1.44 (Docker 29+)
-    image: traefik:v3.7.7
+    image: traefik:v3.7.16
     container_name: traefik
     environment:
       # Your Docker daemon requires API >= 1.44. Without this, Traefik's Docker
@@ -58,7 +58,7 @@ services:
       - "traefik.http.routers.qbittorrent.entrypoints=web"
       - "traefik.http.services.qbittorrent.loadbalancer.server.port=8080"
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:5.2.3_v2.0.13-ls468
+    image: lscr.io/linuxserver/qbittorrent:5.2.4_v2.0.15-ls479
     network_mode: service:surfshark
     container_name: qbittorrent
     depends_on:
@@ -77,7 +77,7 @@ services:
       - "wud.tag.transform=^v?(\\d+\\.\\d+\\.\\d+).* => $$1"
       - "wud.tag.include=^v?\\d+\\.\\d+\\.\\d+.*-ls\\d+$$"
   flaresolverr:
-    image: ghcr.io/flaresolverr/flaresolverr:v3.5.0
+    image: ghcr.io/flaresolverr/flaresolverr:v3.5.2
     container_name: flaresolverr
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
@@ -96,7 +96,7 @@ services:
       - "traefik.http.routers.flaresolverr.entrypoints=web"
       - "traefik.http.services.flaresolverr.loadbalancer.server.port=8191"
   prowlarr:
-    image: lscr.io/linuxserver/prowlarr:2.4.0.5397-ls153
+    image: lscr.io/linuxserver/prowlarr:2.6.5.5623-ls161
     container_name: prowlarr
     environment:
       - PUID=0
@@ -116,7 +116,7 @@ services:
       - "traefik.http.services.prowlarr.loadbalancer.server.port=9696"
       - "wud.tag.transform=^v?(\\d+\\.\\d+\\.\\d+).* => $$1"
   sonarr:
-    image: lscr.io/linuxserver/sonarr:4.0.19.2979-ls319
+    image: lscr.io/linuxserver/sonarr:4.0.20.3014-ls325
     container_name: sonarr
     environment:
       - PUID=0
@@ -138,7 +138,7 @@ services:
       - "traefik.http.services.sonarr.loadbalancer.server.port=8989"
       - "wud.tag.transform=^v?(\\d+\\.\\d+\\.\\d+).* => $$1"
   radarr:
-    image: lscr.io/linuxserver/radarr:6.3.0.10514-ls311
+    image: lscr.io/linuxserver/radarr:6.4.4.10685-ls317
     container_name: radarr
     environment:
       - PUID=0
@@ -160,7 +160,7 @@ services:
       - "traefik.http.services.radarr.loadbalancer.server.port=7878"
       - "wud.tag.transform=^v?(\\d+\\.\\d+\\.\\d+).* => $$1"
   jellyfin:
-    image: lscr.io/linuxserver/jellyfin:10.11.11ubu2404-ls41
+    image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
     environment:
       - PUID=0
@@ -216,7 +216,7 @@ services:
       - "traefik.http.routers.filebrowser.entrypoints=web"
       - "traefik.http.services.filebrowser.loadbalancer.server.port=80"
   jellyseerr:
-    image: ghcr.io/seerr-team/seerr:v3.3.0
+    image: ghcr.io/seerr-team/seerr:v3.5.1
     container_name: jellyseerr
     init: true
     environment:
@@ -241,7 +241,7 @@ services:
       - "traefik.http.routers.jellyseerr.entrypoints=web"
       - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
   homepage:
-    image: ghcr.io/gethomepage/homepage:v1.13.2
+    image: ghcr.io/gethomepage/homepage:v2.5.0
     container_name: homepage
     environment:
       - HOMEPAGE_ALLOWED_HOSTS=*
@@ -273,7 +273,7 @@ services:
       - "traefik.http.routers.homepage.entrypoints=web"
       - "traefik.http.services.homepage.loadbalancer.server.port=3000"
   sabnzbd:
-    image: lscr.io/linuxserver/sabnzbd:5.0.4-ls262
+    image: lscr.io/linuxserver/sabnzbd:5.2.0-unstable
     container_name: sabnzbd
     environment:
       - PUID=0
@@ -294,7 +294,7 @@ services:
       - "traefik.http.services.sabnzbd.loadbalancer.server.port=8080"
       - "wud.tag.transform=^v?(\\d+\\.\\d+\\.\\d+).* => $$1"
   bazarr:
-    image: lscr.io/linuxserver/bazarr:v1.6.0-ls354
+    image: lscr.io/linuxserver/bazarr:v1.6.2-ls366
     container_name: bazarr
     environment:
       - PUID=0
@@ -322,7 +322,7 @@ services:
       - "wud.tag.include=^v?\\d+\\.\\d+\\.\\d+.*-ls\\d+$$"
 
   wud:
-    image: getwud/wud:9.0.2
+    image: getwud/wud:9.4.1
     container_name: wud
     environment:
       - TZ=${TZ}
