@@ -312,7 +312,9 @@ services:
       - 6767:6767 # Host Port 6767 for WebUI, Container Port 6767
     networks:
       - vpn_network
-    restart: unless-stopped
+    restart: "no"
+    profiles:
+      - disabled
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bazarr.rule=Host(`bazarr.${TRAEFIK_DOMAIN:-local}`)"

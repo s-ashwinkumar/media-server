@@ -54,15 +54,15 @@
           type: prowlarr
           url: http://prowlarr:9696
           key: {{HOMEPAGE_VAR_PROWLARR_API_KEY}}
-    - Bazarr:
-        href: http://bazarr.kewpie.top
-        description: 6767 - Subtitle manager for Sonarr and Radarr
-        icon: bazarr.png
-        container: bazarr
-        widget:
-          type: bazarr
-          url: http://bazarr:6767
-          key: {{HOMEPAGE_VAR_BAZARR_API_KEY}}
+#    - Bazarr:
+#        href: http://bazarr.kewpie.top
+#        description: 6767 - Subtitle manager for Sonarr and Radarr
+#        icon: bazarr.png
+#        container: bazarr
+#        widget:
+#          type: bazarr
+#          url: http://bazarr:6767
+#          key: {{HOMEPAGE_VAR_BAZARR_API_KEY}}
     - What's Up Docker:
         href: http://wud.kewpie.top
         description: 3001 - Container update monitor
