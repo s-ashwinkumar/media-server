@@ -172,8 +172,8 @@ services:
       - 7359:7359/udp
       - 1900:1900/udp
     volumes:
-      - ${TV_SHOWS_PATH}:/data/tvshows
-      - ${MOVIES_PATH}:/data/movies
+      - ${HOT_TV_SHOWS_PATH:-/media/mediaserver/media/tv-series}:/data/tvshows
+      - ${HOT_MOVIES_PATH:-/media/mediaserver/media/movies}:/data/movies
       - ${COLD_MOVIES_PATH}:/data/cold/movies
       - ${COLD_TV_SHOWS_PATH}:/data/cold/tvshows
       - ${BOOKS_PATH}:/data/books
@@ -203,8 +203,6 @@ services:
     volumes:
       - ${TV_SHOWS_PATH}:/srv/tvshows
       - ${MOVIES_PATH}:/srv/movies
-      - ${COLD_MOVIES_PATH}:/srv/cold/movies
-      - ${COLD_TV_SHOWS_PATH}:/srv/cold/tvshows
       - ${BOOKS_PATH}:/srv/books
       - ${CONFIGS_PATH}/filebrowser:/config
     networks:
