@@ -58,7 +58,7 @@ services:
       - "traefik.http.routers.qbittorrent.entrypoints=web"
       - "traefik.http.services.qbittorrent.loadbalancer.server.port=8080"
   qbittorrent:
-    image: lscr.io/linuxserver/qbittorrent:5.2.4_v2.0.15-ls479
+    image: lscr.io/linuxserver/qbittorrent:5.3.0_v2.1.2-ls485
     network_mode: service:surfshark
     container_name: qbittorrent
     depends_on:
@@ -241,7 +241,7 @@ services:
       - "traefik.http.routers.jellyseerr.entrypoints=web"
       - "traefik.http.services.jellyseerr.loadbalancer.server.port=5055"
   homepage:
-    image: ghcr.io/gethomepage/homepage:v2.5.0
+    image: ghcr.io/gethomepage/homepage:v2.7.0
     container_name: homepage
     environment:
       - HOMEPAGE_ALLOWED_HOSTS=*
